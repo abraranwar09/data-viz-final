@@ -22,6 +22,8 @@ ALLOWED_EXTENSIONS = {'csv', 'xlsx', 'xls', 'json', 'tsv', 'txt'}
 CHUNK_SIZE = 10000  # Number of rows to process at a time
 
 def allowed_file(filename):
+    if not filename:
+        return False
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
 @app.route('/')
@@ -30,21 +32,34 @@ def index():
 
 @app.route('/upload', methods=['POST'])
 def upload_file():
+    # Check if file was included in request
     if 'file' not in request.files:
-        return jsonify({'error': 'No file part'}), 400
+        return jsonify({'error': 'No file was uploaded'}), 400
     
     file = request.files['file']
-    if not file or file.filename == '':
-        return jsonify({'error': 'No selected file'}), 400
     
-    if file and allowed_file(file.filename):
+    # Check if file was selected
+    if not file or not file.filename:
+        return jsonify({'error': 'No file was selected'}), 400
+    
+    # Validate file extension
+    if not allowed_file(file.filename):
+        return jsonify({
+            'error': f'Invalid file type. Allowed types are: {", ".join(ALLOWED_EXTENSIONS)}'
+        }), 400
+    
+    try:
+        # Read file content
+        file_content = file.read()
+        if not file_content:
+            return jsonify({'error': 'The uploaded file is empty'}), 400
+        
+        file_buffer = io.BytesIO(file_content)
+        filename = secure_filename(file.filename)
+        extension = filename.rsplit('.', 1)[1].lower()
+        
+        # Attempt to read the file based on its extension
         try:
-            filename = secure_filename(file.filename)
-            extension = filename.rsplit('.', 1)[1].lower()
-            
-            file_content = file.read()
-            file_buffer = io.BytesIO(file_content)
-            
             if extension == 'csv':
                 df = pd.read_csv(file_buffer)
             elif extension in ['tsv', 'txt']:
@@ -58,9 +73,14 @@ def upload_file():
                     file_buffer.seek(0)
                     df = pd.read_json(file_buffer, lines=True)
             
+            # Validate DataFrame
             if df.empty:
-                return jsonify({'error': 'The file contains no data'}), 400
-                
+                return jsonify({'error': 'The file contains no data rows'}), 400
+            
+            if len(df.columns) == 0:
+                return jsonify({'error': 'The file contains no columns'}), 400
+            
+            # Process the data
             if len(df) > CHUNK_SIZE:
                 result = chunk_process_data(df, chunk_size=CHUNK_SIZE)
             else:
@@ -68,10 +88,17 @@ def upload_file():
                 
             return jsonify(result)
             
-        except Exception as e:
-            return jsonify({'error': f'Error processing file: {str(e)}'}), 500
-    
-    return jsonify({'error': 'Invalid file type'}), 400
+        except pd.errors.EmptyDataError:
+            return jsonify({'error': 'The file contains no data'}), 400
+        except pd.errors.ParserError as e:
+            return jsonify({
+                'error': f'Unable to parse the file. Please check if the format matches the file extension. Details: {str(e)}'
+            }), 400
+        except ValueError as e:
+            return jsonify({'error': f'Invalid file format: {str(e)}'}), 400
+            
+    except Exception as e:
+        return jsonify({'error': f'Error processing file: {str(e)}'}), 500
 
 @app.route('/ai/analyze', methods=['POST'])
 def analyze_data():

@@ -30,7 +30,21 @@ function initializeFileHandlers() {
 }
 
 async function handleFile(file) {
-    if (!file) return;
+    const progressBar = document.querySelector('.progress-bar');
+    const progressDiv = document.getElementById('uploadProgress');
+    const errorAlert = document.getElementById('errorAlert');
+    const shareButton = document.getElementById('shareAnalysis');
+
+    // Reset UI state
+    progressDiv.classList.add('d-none');
+    errorAlert.classList.add('d-none');
+    shareButton.disabled = true;
+
+    // Client-side validation
+    if (!file) {
+        showError('Please select a file to upload');
+        return;
+    }
 
     // Check file size
     const maxSize = 50 * 1024 * 1024; // 50MB
@@ -39,48 +53,77 @@ async function handleFile(file) {
         return;
     }
 
-    const progressBar = document.querySelector('.progress-bar');
-    const progressDiv = document.getElementById('uploadProgress');
-    const errorAlert = document.getElementById('errorAlert');
-    const shareButton = document.getElementById('shareAnalysis');
+    // Check if file is empty
+    if (file.size === 0) {
+        showError('The selected file is empty');
+        return;
+    }
+
+    // Check file extension
+    const allowedExtensions = ['csv', 'xlsx', 'xls', 'json', 'tsv', 'txt'];
+    const extension = file.name.split('.').pop().toLowerCase();
+    if (!allowedExtensions.includes(extension)) {
+        showError(`Invalid file type. Allowed types are: ${allowedExtensions.join(', ')}`);
+        return;
+    }
 
     // Show progress bar
     progressDiv.classList.remove('d-none');
     progressBar.style.width = '0%';
-    errorAlert.classList.add('d-none');
-    shareButton.disabled = true;
+    progressBar.setAttribute('aria-valuenow', 0);
 
     const formData = new FormData();
     formData.append('file', file);
 
     try {
-        const response = await fetch('/upload', {
-            method: 'POST',
-            body: formData,
-            onUploadProgress: (progressEvent) => {
-                const percentCompleted = Math.round((progressEvent.loaded * 100) / progressEvent.total);
-                progressBar.style.width = percentCompleted + '%';
-            }
-        });
-
-        if (!response.ok) {
-            const errorData = await response.json();
-            throw new Error(errorData.error || 'Upload failed');
-        }
-
-        const data = await response.json();
-        appState.currentData = data;
-        eventBus.publish('dataLoaded', data);
+        const xhr = new XMLHttpRequest();
+        xhr.open('POST', '/upload', true);
         
-        updateDataStats(data);
-        updatePreviewTable(data.preview);
-        updateVisualizations(data);
+        // Track upload progress
+        xhr.upload.onprogress = (e) => {
+            if (e.lengthComputable) {
+                const percentComplete = (e.loaded / e.total) * 100;
+                progressBar.style.width = percentComplete + '%';
+                progressBar.setAttribute('aria-valuenow', percentComplete);
+            }
+        };
 
-        // Enable share button
-        shareButton.disabled = false;
+        // Handle response
+        xhr.onload = async function() {
+            try {
+                const response = JSON.parse(xhr.responseText);
+                
+                if (xhr.status !== 200) {
+                    throw new Error(response.error || 'Upload failed');
+                }
 
-        // Hide progress bar
-        progressDiv.classList.add('d-none');
+                // Update application state
+                appState.currentData = response;
+                eventBus.publish('dataLoaded', response);
+                
+                // Update UI
+                updateDataStats(response);
+                updatePreviewTable(response.preview);
+                updateVisualizations(response);
+                shareButton.disabled = false;
+                progressDiv.classList.add('d-none');
+                
+            } catch (error) {
+                console.error('Error:', error);
+                showError(error.message);
+                shareButton.disabled = true;
+            }
+            progressDiv.classList.add('d-none');
+        };
+
+        // Handle network errors
+        xhr.onerror = function() {
+            showError('Network error occurred while uploading the file');
+            progressDiv.classList.add('d-none');
+            shareButton.disabled = true;
+        };
+
+        xhr.send(formData);
     } catch (error) {
         console.error('Error:', error);
         showError(error.message);
@@ -91,7 +134,12 @@ async function handleFile(file) {
 
 function showError(message) {
     const errorAlert = document.getElementById('errorAlert');
-    errorAlert.textContent = message;
+    errorAlert.innerHTML = `
+        <div class="d-flex align-items-center">
+            <i class="bi bi-exclamation-triangle-fill me-2"></i>
+            <span>${message}</span>
+        </div>
+    `;
     errorAlert.classList.remove('d-none');
 }
 
@@ -131,13 +179,16 @@ function updateDataStats(data) {
 
 function updatePreviewTable(preview) {
     const table = document.getElementById('previewTable');
-    if (!preview || !preview.length) return;
+    if (!preview || !preview.length) {
+        table.innerHTML = '<thead><tr><th>No data available</th></tr></thead>';
+        return;
+    }
 
     const headers = Object.keys(preview[0]);
     const headerRow = headers.map(h => `<th>${h}</th>`).join('');
     
     const rows = preview.map(row => {
-        return `<tr>${headers.map(h => `<td>${row[h]}</td>`).join('')}</tr>`;
+        return `<tr>${headers.map(h => `<td>${row[h] ?? ''}</td>`).join('')}</tr>`;
     }).join('');
 
     table.innerHTML = `
