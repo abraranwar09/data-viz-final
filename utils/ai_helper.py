@@ -1,6 +1,7 @@
 import os
 import httpx
 
+
 def get_ai_insights(question, context):
     """
     Get insights from Perplexity AI API
@@ -17,12 +18,13 @@ def get_ai_insights(question, context):
         'Authorization': f'Bearer {api_key}',
         'Content-Type': 'application/json'
     }
-    
+
     # Prepare data context
     data_summary = f"Data summary: {context['data']['summary']}\n"
     column_info = "Columns: " + ", ".join(context['data']['columns']) + "\n"
-    stats_info = "Statistics available for: " + ", ".join(context['data']['column_stats'].keys())
-    
+    stats_info = "Statistics available for: " + ", ".join(
+        context['data']['column_stats'].keys())
+
     prompt = f"""Analyze this dataset:
     {data_summary}
     {column_info}
@@ -30,21 +32,26 @@ def get_ai_insights(question, context):
     
     Question: {question}
     """
-    
+
     try:
         with httpx.Client(timeout=30.0) as client:
             response = client.post(
                 'https://api.perplexity.ai/chat/completions',
                 headers=headers,
                 json={
-                    'model': 'mixtral-8x7b-instruct',
-                    'messages': [
-                        {'role': 'system', 'content': 'You are a data analysis assistant.'},
-                        {'role': 'user', 'content': prompt}
-                    ]
-                }
-            )
-            
+                    'model':
+                    'llama-3.1-sonar-small-128k-online',
+                    'messages': [{
+                        'role':
+                        'system',
+                        'content':
+                        'You are a data analysis assistant.'
+                    }, {
+                        'role': 'user',
+                        'content': prompt
+                    }]
+                })
+
             if response.status_code == 200:
                 result = response.json()
                 return {
@@ -58,10 +65,6 @@ def get_ai_insights(question, context):
                     'confidence': 0,
                     'sources': []
                 }
-                
+
     except Exception as e:
-        return {
-            'answer': f"Error: {str(e)}",
-            'confidence': 0,
-            'sources': []
-        }
+        return {'answer': f"Error: {str(e)}", 'confidence': 0, 'sources': []}
