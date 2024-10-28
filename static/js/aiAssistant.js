@@ -17,20 +17,12 @@ function initializeAIAssistant() {
 }
 
 function setupAIAssistant() {
-    // First find or create the AI container
     let aiContainer = document.querySelector('.ai-container');
     if (!aiContainer) {
-        console.log('Creating new AI container');
-        aiContainer = document.createElement('div');
-        aiContainer.className = 'ai-container';
-        // Append to a known parent element - adjust this selector as needed
-        const mainContent = document.querySelector('#mainContent') || document.body;
-        mainContent.appendChild(aiContainer);
+        console.error('AI container not found');
+        return;
     }
 
-    console.log('Setting up AI assistant interface');
-
-    // Create chat container with loading indicator
     aiContainer.innerHTML = `
         <div class="chat-container">
             <div class="chat-messages" id="chatMessages">
@@ -41,7 +33,6 @@ function setupAIAssistant() {
                         </div>
                         <div class="message-content flex-grow-1">
                             Hello! I'm your AI assistant. I can help you analyze your data and create visualizations.
-                            Try asking me questions about your data or request specific visualizations.
                         </div>
                     </div>
                 </div>
@@ -64,7 +55,7 @@ function setupAIAssistant() {
         </div>
     `;
 
-    // Verify elements exist after creation
+    // Verify all required elements exist
     const elements = {
         askButton: document.getElementById('askAI'),
         questionInput: document.getElementById('aiQuestion'),
@@ -78,11 +69,9 @@ function setupAIAssistant() {
         .map(([name]) => name);
 
     if (missingElements.length > 0) {
-        console.error('Failed to initialize AI assistant elements:', missingElements);
+        console.error('Missing required elements:', missingElements);
         return;
     }
-
-    console.log('Setting up event listeners');
 
     // Add keyboard event listener for Enter key
     elements.questionInput.addEventListener('keydown', async (e) => {
@@ -90,9 +79,7 @@ function setupAIAssistant() {
             e.preventDefault();
             console.log('Enter key pressed');
             if (!elements.questionInput.disabled) {
-                setTimeout(async () => {
-                    await handleAIQuestion();
-                }, 0);
+                await handleAIQuestion();
             }
         }
     });
@@ -101,9 +88,7 @@ function setupAIAssistant() {
     elements.askButton.addEventListener('click', async () => {
         console.log('Ask button clicked');
         if (!elements.askButton.disabled) {
-            setTimeout(async () => {
-                await handleAIQuestion();
-            }, 0);
+            await handleAIQuestion();
         }
     });
 
@@ -111,43 +96,31 @@ function setupAIAssistant() {
     if (window.appState?.currentData) {
         addMessage('system', 'Data loaded successfully. How can I help you analyze it?');
     }
-
-    console.log('AI assistant initialization complete');
 }
 
 async function handleAIQuestion() {
-    console.log('Handling AI question');
-    
-    // Get elements
-    const questionInput = document.getElementById('aiQuestion');
-    const chatMessages = document.getElementById('chatMessages');
-    const loadingIndicator = document.querySelector('.loading-indicator');
-    const askButton = document.getElementById('askAI');
+    const elements = {
+        askButton: document.getElementById('askAI'),
+        questionInput: document.getElementById('aiQuestion'),
+        chatMessages: document.getElementById('chatMessages'),
+        loadingIndicator: document.querySelector('.loading-indicator')
+    };
 
-    // Verify all elements exist
-    if (!questionInput || !chatMessages || !loadingIndicator || !askButton) {
-        console.error('Missing required elements:', {
-            questionInput: !!questionInput,
-            chatMessages: !!chatMessages,
-            loadingIndicator: !!loadingIndicator,
-            askButton: !!askButton
-        });
+    if (!elements.loadingIndicator) {
+        console.error('Loading indicator not found');
         return;
     }
 
-    const question = questionInput.value.trim();
-    if (!question) {
-        console.log('Empty question, ignoring');
-        return;
-    }
+    const question = elements.questionInput.value.trim();
+    if (!question) return;
 
     try {
         // Disable input and button while processing
-        questionInput.disabled = true;
-        askButton.disabled = true;
+        elements.questionInput.disabled = true;
+        elements.askButton.disabled = true;
 
         // Show loading indicator
-        loadingIndicator.classList.remove('d-none');
+        elements.loadingIndicator.classList.remove('d-none');
 
         // Add user message
         addMessage('user', question);
@@ -157,7 +130,6 @@ async function handleAIQuestion() {
             throw new Error('Please upload some data first.');
         }
 
-        console.log('Sending request to server');
         const response = await fetch('/ai/analyze', {
             method: 'POST',
             headers: {
@@ -177,7 +149,6 @@ async function handleAIQuestion() {
         }
 
         const result = await response.json();
-        console.log('Received response:', result);
 
         if (result?.response?.answer) {
             const answer = result.response.answer;
@@ -198,28 +169,25 @@ async function handleAIQuestion() {
             }
 
             // Clear input after successful response
-            questionInput.value = '';
+            elements.questionInput.value = '';
         } else {
             throw new Error('Invalid response format');
         }
-        
     } catch (error) {
         console.error('AI Error:', error);
         addMessage('error', `Error: ${error.message}`);
     } finally {
         // Re-enable input and button
-        questionInput.disabled = false;
-        askButton.disabled = false;
+        elements.questionInput.disabled = false;
+        elements.askButton.disabled = false;
         
         // Hide loading indicator
-        loadingIndicator.classList.add('d-none');
+        elements.loadingIndicator.classList.add('d-none');
         scrollToBottom();
     }
 }
 
 function addMessage(type, content) {
-    console.log(`Adding ${type} message:`, content);
-    
     const chatMessages = document.getElementById('chatMessages');
     if (!chatMessages) {
         console.error('Chat messages container not found');
@@ -257,7 +225,6 @@ function scrollToBottom() {
     }
 }
 
-// Add helper function to extract visualization config
 function extractVisualizationConfig(message) {
     const matches = message.match(/```echarts\n([\s\S]*?)\n```/);
     if (matches && matches[1]) {
