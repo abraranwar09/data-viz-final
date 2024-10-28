@@ -43,11 +43,143 @@ except APIKeyError as e:
     print(f"API Key Error: {str(e)}")
     openai_client = None
 
+def perplexity_web_search(query: str) -> str:
+    try:
+        response = requests.post(
+            "https://api.perplexity.ai/chat/completions",
+            headers={
+                "Authorization": f"Bearer {PERPLEXITY_API_KEY}",
+                "Content-Type": "application/json"
+            },
+            json={
+                "model": "sonar-small-online",
+                "messages": [
+                    {
+                        "role": "system",
+                        "content": "You are a helpful assistant that provides accurate and up-to-date information based on web searches."
+                    },
+                    {
+                        "role": "user",
+                        "content": query
+                    }
+                ]
+            }
+        )
+        
+        if response.status_code == 200:
+            result = response.json()
+            if result.get("choices") and len(result["choices"]) > 0:
+                return result["choices"][0]["message"]["content"]
+        return f"Error: Unable to get search results (Status: {response.status_code})"
+    except Exception as e:
+        return f"Error performing web search: {str(e)}"
+
+def send_openai_request(prompt: str, context: Dict[str, Any]) -> Dict[str, Any]:
+    """Send request to OpenAI with function calling capability."""
+    if not openai_client:
+        raise APIKeyError("OpenAI client is not properly initialized")
+
+    try:
+        data_context = format_data_context(context.get('data'))
+        
+        system_message: ChatCompletionSystemMessageParam = {
+            "role": "system",
+            "content": (
+                "You are a helpful assistant. No data is currently loaded, but you can still help with "
+                "general questions or guide users on data analysis concepts."
+            ) if not data_context else (
+                "You are a data analysis assistant with access to the uploaded document data. "
+                "You can analyze the data and provide insights. If you need additional information "
+                "from the web, you can use the search_web function. Format your responses using "
+                "markdown with proper headings, lists, and tables when appropriate."
+            )
+        }
+
+        user_message: ChatCompletionUserMessageParam = {
+            "role": "user",
+            "content": f"Context:\n{data_context}\n\nQuestion: {prompt}" if data_context else prompt
+        }
+
+        messages: List[ChatCompletionMessageParam] = [system_message, user_message]
+
+        try:
+            chat_completion = openai_client.chat.completions.create(
+                model="gpt-4",
+                messages=messages,
+                functions=[{
+                    "name": "search_web",
+                    "description": "Search the web for additional information or context",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "query": {
+                                "type": "string",
+                                "description": "The search query"
+                            }
+                        },
+                        "required": ["query"]
+                    }
+                }],
+                function_call="auto"
+            )
+        except Exception as e:
+            raise AIModelError(f"Error calling OpenAI API: {str(e)}")
+
+        message = chat_completion.choices[0].message
+        final_content = message.content or ""
+
+        # Handle function calls for web search
+        if message.function_call:
+            try:
+                function_name = message.function_call.name
+                function_args = json.loads(message.function_call.arguments)
+                
+                if function_name == "search_web":
+                    search_results = perplexity_web_search(function_args.get("query"))
+                    
+                    # Create a new message list including the search results
+                    search_messages = messages + [
+                        ChatCompletionMessageParam(
+                            role="assistant",
+                            content=message.content,
+                            function_call=message.function_call
+                        ),
+                        ChatCompletionMessageParam(
+                            role="function",
+                            name="search_web",
+                            content=search_results
+                        )
+                    ]
+
+                    # Get final response incorporating search results
+                    final_response = openai_client.chat.completions.create(
+                        model="gpt-4",
+                        messages=search_messages
+                    )
+                    final_content = final_response.choices[0].message.content or "No response generated"
+
+            except Exception as e:
+                final_content = f"Error during web search: {str(e)}\n\n{message.content or ''}"
+
+        return {
+            "answer": final_content,
+            "confidence": 0.95 if data_context else 0.8,
+            "sources": ["Data Analysis"] if data_context else ["General Assistant"]
+        }
+
+    except Exception as e:
+        print(f"Error in send_openai_request: {str(e)}")
+        return {
+            "answer": f"An error occurred while processing your request: {str(e)}",
+            "confidence": 0,
+            "sources": []
+        }
+
+# Helper functions (unchanged)
 def get_ai_insights(question: str, context: Dict[str, Any]) -> Dict[str, Any]:
     """Get AI insights with proper data context handling."""
     try:
         if not context or not context.get('data'):
-            # Fallback mode - general assistant without data context
             return send_openai_request(question, {'data': None})
         
         cleaned_data = clean_data_context(context['data'])
@@ -117,159 +249,6 @@ def cached_openai_request(prompt: str, context_hash: str) -> Dict[str, Any]:
             "confidence": 0,
             "sources": []
         }
-
-def send_openai_request(prompt: str, context: Dict[str, Any]) -> Dict[str, Any]:
-    """Send request to OpenAI with function calling capability."""
-    if not openai_client:
-        raise APIKeyError("OpenAI client is not properly initialized")
-
-    try:
-        data_context = format_data_context(context.get('data'))
-        
-        # Use appropriate system message based on context
-        system_message: ChatCompletionSystemMessageParam = {
-            "role": "system",
-            "content": (
-                "You are a helpful assistant. No data is currently loaded, but you can still help with "
-                "general questions or guide users on data analysis concepts."
-            ) if not data_context else (
-                "You are a data analysis assistant with access to the uploaded document data. "
-                "You can analyze the data and provide insights. If you need additional information "
-                "from the web, you can use the search_web function. Format your responses using "
-                "markdown with proper headings, lists, and tables when appropriate."
-            )
-        }
-
-        user_message: ChatCompletionUserMessageParam = {
-            "role": "user",
-            "content": f"Context:\n{data_context}\n\nQuestion: {prompt}" if data_context else prompt
-        }
-
-        messages: List[ChatCompletionMessageParam] = [system_message, user_message]
-
-        try:
-            chat_completion = openai_client.chat.completions.create(
-                model="gpt-4",
-                messages=messages,
-                functions=[{
-                    "name": "search_web",
-                    "description": "Search the web for additional information or context",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "query": {
-                                "type": "string",
-                                "description": "The search query"
-                            }
-                        },
-                        "required": ["query"]
-                    }
-                }],
-                function_call="auto"
-            )
-        except Exception as e:
-            raise AIModelError(f"Error calling OpenAI API: {str(e)}")
-
-        message = chat_completion.choices[0].message
-        final_content = message.content or ""
-
-        if message.function_call:
-            function_name = message.function_call.name
-            function_args = json.loads(message.function_call.arguments)
-            
-            if function_name == "search_web":
-                try:
-                    search_results = perplexity_web_search(function_args.get("query"))
-                    
-                    function_message: ChatCompletionFunctionMessageParam = {
-                        "role": "function",
-                        "name": "search_web",
-                        "content": search_results
-                    }
-
-                    assistant_message: ChatCompletionAssistantMessageParam = {
-                        "role": "assistant",
-                        "content": message.content,
-                        "function_call": message.function_call
-                    }
-
-                    second_messages: List[ChatCompletionMessageParam] = [
-                        system_message,
-                        user_message,
-                        assistant_message,
-                        function_message
-                    ]
-
-                    second_response = openai_client.chat.completions.create(
-                        model="gpt-4",
-                        messages=second_messages
-                    )
-                    final_content = second_response.choices[0].message.content or "No response generated"
-                except WebSearchError as e:
-                    final_content = f"I encountered an error while searching for additional information: {str(e)}\n\n" + (message.content or "")
-
-        return {
-            "answer": final_content,
-            "confidence": 0.95 if data_context else 0.8,
-            "sources": ["Data Analysis"] if data_context else ["General Assistant"]
-        }
-
-    except Exception as e:
-        print(f"Error in send_openai_request: {str(e)}")
-        return {
-            "answer": f"An error occurred while processing your request: {str(e)}",
-            "confidence": 0,
-            "sources": []
-        }
-
-def perplexity_web_search(query: str) -> str:
-    """Search the web using Perplexity API with improved error handling."""
-    if not PERPLEXITY_API_KEY:
-        raise APIKeyError("Perplexity API key is not configured")
-
-    try:
-        with requests.Session() as session:
-            response = session.post(
-                "https://api.perplexity.ai/chat/completions",
-                headers={
-                    "Authorization": f"Bearer {PERPLEXITY_API_KEY}",
-                    "Content-Type": "application/json",
-                    "Accept": "application/json"
-                },
-                json={
-                    "model": "llama-3.1-sonar-small-128k-online",
-                    "messages": [
-                        {
-                            "role": "system",
-                            "content": "You are a helpful assistant that provides accurate and up-to-date information based on web searches."
-                        },
-                        {
-                            "role": "user",
-                            "content": f"Search and summarize relevant information for: {query}"
-                        }
-                    ]
-                },
-                timeout=30
-            )
-        
-        if response.status_code == 200:
-            result = response.json()
-            if "choices" in result and len(result["choices"]) > 0:
-                return result["choices"][0]["message"]["content"]
-            raise WebSearchError("Invalid response format from Perplexity API")
-        elif response.status_code == 401:
-            raise APIKeyError("Invalid Perplexity API key")
-        elif response.status_code == 429:
-            raise WebSearchError("Rate limit exceeded for Perplexity API")
-        else:
-            raise WebSearchError(f"Perplexity API error: {response.status_code}")
-
-    except requests.Timeout:
-        raise WebSearchError("Request to Perplexity API timed out")
-    except requests.RequestException as e:
-        raise WebSearchError(f"Network error during web search: {str(e)}")
-    except Exception as e:
-        raise WebSearchError(f"Unexpected error during web search: {str(e)}")
 
 def generate_visualizations(data: Dict[str, Any]) -> Dict[str, Any]:
     """Generate dynamic visualizations using GPT-4."""
