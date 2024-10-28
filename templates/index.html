@@ -13,122 +13,136 @@
     <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
 </head>
 <body>
-    <div class="container-fluid">
-        <nav class="navbar navbar-expand-lg navbar-dark bg-dark mb-4">
-            <div class="container-fluid">
-                <a class="navbar-brand" href="/">
-                    <i class="bi bi-graph-up me-2"></i>Data Analysis Dashboard
-                </a>
-                <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
-                    <span class="navbar-toggler-icon"></span>
-                </button>
-                <div class="collapse navbar-collapse" id="navbarNav">
-                    <ul class="navbar-nav me-auto">
-                        <li class="nav-item">
-                            <a class="nav-link active" href="/">
-                                <i class="bi bi-house-door me-1"></i>Home
-                            </a>
-                        </li>
-                        <li class="nav-item">
-                            <a class="nav-link" href="/shared">
-                                <i class="bi bi-share me-1"></i>Shared Analyses
-                            </a>
-                        </li>
-                    </ul>
-                    <div class="d-flex align-items-center">
-                        <button id="shareAnalysis" class="btn btn-outline-primary" disabled>
-                            <i class="bi bi-share-fill me-1"></i>Share Analysis
-                        </button>
-                    </div>
-                </div>
-            </div>
-        </nav>
-
-        <div class="row mt-4">
-            <!-- File Upload Section -->
-            <div class="col-12 mb-4">
-                <div class="card">
-                    <div class="card-body" id="dropZone">
-                        <div class="text-center">
-                            <i class="bi bi-cloud-upload display-1"></i>
-                            <h5>Drag and drop your data file here</h5>
-                            <p class="text-muted">Supported formats: CSV, TSV, Excel (xlsx/xls), JSON</p>
-                            <p class="text-muted">Maximum file size: 50MB</p>
-                            <input type="file" id="fileInput" class="d-none" accept=".csv,.xlsx,.xls,.json,.tsv,.txt">
-                            <button class="btn btn-primary" onclick="document.getElementById('fileInput').click()">
-                                Choose File
+    <div class="wrapper">
+        <!-- Main Content -->
+        <div class="main-content">
+            <nav class="navbar navbar-expand-lg navbar-dark bg-dark mb-4">
+                <div class="container-fluid">
+                    <a class="navbar-brand" href="/">
+                        <i class="bi bi-graph-up me-2"></i>Data Analysis Dashboard
+                    </a>
+                    <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                        <span class="navbar-toggler-icon"></span>
+                    </button>
+                    <div class="collapse navbar-collapse" id="navbarNav">
+                        <ul class="navbar-nav me-auto">
+                            <li class="nav-item">
+                                <a class="nav-link active" href="/">
+                                    <i class="bi bi-house-door me-1"></i>Home
+                                </a>
+                            </li>
+                            <li class="nav-item">
+                                <a class="nav-link" href="/shared">
+                                    <i class="bi bi-share me-1"></i>Shared Analyses
+                                </a>
+                            </li>
+                        </ul>
+                        <div class="d-flex align-items-center">
+                            <button id="shareAnalysis" class="btn btn-outline-primary" disabled>
+                                <i class="bi bi-share-fill me-1"></i>Share Analysis
+                            </button>
+                            <button class="btn btn-link d-lg-none ms-2" id="toggleAiSidebar">
+                                <i class="bi bi-robot"></i>
                             </button>
                         </div>
-                        <div id="uploadProgress" class="progress mt-3 d-none">
-                            <div class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar"></div>
+                    </div>
+                </div>
+            </nav>
+
+            <div class="container-fluid">
+                <!-- File Upload Section -->
+                <div class="row mt-4">
+                    <div class="col-12 mb-4">
+                        <div class="card">
+                            <div class="card-body" id="dropZone">
+                                <div class="text-center">
+                                    <i class="bi bi-cloud-upload display-1"></i>
+                                    <h5>Drag and drop your data file here</h5>
+                                    <p class="text-muted">Supported formats: CSV, TSV, Excel (xlsx/xls), JSON</p>
+                                    <p class="text-muted">Maximum file size: 50MB</p>
+                                    <input type="file" id="fileInput" class="d-none" accept=".csv,.xlsx,.xls,.json,.tsv,.txt">
+                                    <button class="btn btn-primary" onclick="document.getElementById('fileInput').click()">
+                                        Choose File
+                                    </button>
+                                </div>
+                                <div id="uploadProgress" class="progress mt-3 d-none">
+                                    <div class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Error Alert -->
+                    <div class="col-12 mb-4">
+                        <div id="errorAlert" class="alert alert-danger d-none"></div>
+                    </div>
+
+                    <!-- Data Preview Section -->
+                    <div class="col-12 mb-4">
+                        <div class="card">
+                            <div class="card-header">
+                                <h5 class="card-title">Data Preview</h5>
+                            </div>
+                            <div class="card-body">
+                                <div id="dataStats" class="mb-3"></div>
+                                <div class="table-responsive">
+                                    <table class="table table-hover" id="previewTable">
+                                        <thead>
+                                            <tr><th>Upload a file to see preview</th></tr>
+                                        </thead>
+                                        <tbody></tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Visualizations Section -->
+                    <div class="col-12 mb-4">
+                        <div class="card">
+                            <div class="card-header">
+                                <h5 class="card-title">Visualizations</h5>
+                            </div>
+                            <div class="card-body">
+                                <div class="visualization-loading d-none">
+                                    <div class="loading-indicator">
+                                        <div class="loading-bar"></div>
+                                        <div class="loading-bar"></div>
+                                        <div class="loading-bar"></div>
+                                        <div class="loading-bar"></div>
+                                        <div class="loading-bar"></div>
+                                    </div>
+                                </div>
+                                <div class="row">
+                                    <div class="col-md-6 mb-4">
+                                        <div id="chart1" style="height: 400px;"></div>
+                                    </div>
+                                    <div class="col-md-6 mb-4">
+                                        <div id="chart2" style="height: 400px;"></div>
+                                    </div>
+                                    <div class="col-md-6 mb-4">
+                                        <div id="chart3" style="height: 400px;"></div>
+                                    </div>
+                                    <div class="col-md-6 mb-4">
+                                        <div id="chart4" style="height: 400px;"></div>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
             </div>
+        </div>
 
-            <!-- Error Alert -->
-            <div class="col-12 mb-4">
-                <div id="errorAlert" class="alert alert-danger d-none"></div>
+        <!-- AI Assistant Sidebar -->
+        <div class="ai-sidebar">
+            <div class="ai-sidebar-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0"><i class="bi bi-robot me-2"></i>AI Assistant</h5>
+                <button class="btn btn-link d-lg-none" id="closeAiSidebar">
+                    <i class="bi bi-x-lg"></i>
+                </button>
             </div>
-
-            <!-- Data Preview Section -->
-            <div class="col-12 mb-4">
-                <div class="card">
-                    <div class="card-header">
-                        <h5 class="card-title">Data Preview</h5>
-                    </div>
-                    <div class="card-body">
-                        <div id="dataStats" class="mb-3"></div>
-                        <div class="table-responsive">
-                            <table class="table table-hover" id="previewTable">
-                                <thead>
-                                    <tr><th>Upload a file to see preview</th></tr>
-                                </thead>
-                                <tbody></tbody>
-                            </table>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Visualizations Section -->
-            <div class="col-12 mb-4">
-                <div class="card">
-                    <div class="card-header">
-                        <h5 class="card-title">Visualizations</h5>
-                    </div>
-                    <div class="card-body">
-                        <div class="row">
-                            <div class="col-md-6 mb-4">
-                                <div id="chart1" style="height: 400px;"></div>
-                            </div>
-                            <div class="col-md-6 mb-4">
-                                <div id="chart2" style="height: 400px;"></div>
-                            </div>
-                            <div class="col-md-6 mb-4">
-                                <div id="chart3" style="height: 400px;"></div>
-                            </div>
-                            <div class="col-md-6 mb-4">
-                                <div id="chart4" style="height: 400px;"></div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- AI Assistant Section -->
-            <div class="col-12 mb-4">
-                <div class="card">
-                    <div class="card-header">
-                        <h5 class="card-title">
-                            <i class="bi bi-robot me-2"></i>AI Assistant
-                        </h5>
-                    </div>
-                    <div class="card-body p-0">
-                        <div class="ai-container"></div>
-                    </div>
-                </div>
-            </div>
+            <div class="ai-container"></div>
         </div>
     </div>
 
