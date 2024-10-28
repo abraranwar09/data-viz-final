@@ -1,0 +1,25 @@
+/* Custom styles to complement Bootstrap */
+#dropZone {
+    border: 2px dashed var(--bs-border-color);
+    border-radius: 5px;
+    padding: 2rem;
+    transition: all 0.3s ease;
+}
+
+#dropZone.dragover {
+    border-color: var(--bs-primary);
+    background-color: rgba(var(--bs-primary-rgb), 0.1);
+}
+
+.chart-container {
+    background-color: var(--bs-dark);
+    border-radius: 5px;
+    padding: 1rem;
+}
+
+#aiResponse {
+    min-height: 100px;
+    padding: 1rem;
+    background-color: var(--bs-dark);
+    border-radius: 5px;
+}
