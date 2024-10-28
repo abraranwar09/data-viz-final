@@ -14,8 +14,12 @@ class SharedAnalysis(db.Model):
     description = db.Column(db.Text)
     data = db.Column(db.JSON, nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    last_modified = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     views = db.Column(db.Integer, default=0)
     comments = db.relationship('Comment', backref='analysis', lazy=True)
+    collaborators = db.relationship('Collaborator', backref='analysis', lazy=True)
+    is_public = db.Column(db.Boolean, default=True)
+    password = db.Column(db.String(100))  # For password-protected shares
 
 class Comment(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -23,3 +27,14 @@ class Comment(db.Model):
     author_name = db.Column(db.String(50), nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     analysis_id = db.Column(db.Integer, db.ForeignKey('shared_analysis.id'), nullable=False)
+    parent_id = db.Column(db.Integer, db.ForeignKey('comment.id'))
+    replies = db.relationship('Comment', backref=db.backref('parent', remote_side=[id]))
+
+class Collaborator(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    analysis_id = db.Column(db.Integer, db.ForeignKey('shared_analysis.id'), nullable=False)
+    session_id = db.Column(db.String(50), nullable=False)
+    name = db.Column(db.String(50), nullable=False)
+    joined_at = db.Column(db.DateTime, default=datetime.utcnow)
+    last_active = db.Column(db.DateTime, default=datetime.utcnow)
+    role = db.Column(db.String(20), default='viewer')  # viewer, editor, owner

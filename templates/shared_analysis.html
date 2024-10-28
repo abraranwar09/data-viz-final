@@ -8,6 +8,7 @@
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.7.2/font/bootstrap-icons.css" rel="stylesheet">
     <link href="/static/css/styles.css" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
 </head>
 <body>
     <div class="container-fluid">
@@ -37,13 +38,22 @@
                             </a>
                         </li>
                     </ul>
+                    <div class="d-flex align-items-center">
+                        <div id="collaborators" class="me-3">
+                            <span class="badge bg-primary">
+                                <i class="bi bi-people-fill me-1"></i>
+                                <span id="collaboratorCount">1</span> online
+                            </span>
+                        </div>
+                    </div>
                 </div>
             </div>
         </nav>
 
         <div class="row mt-4">
-            <div class="col-12">
-                <div class="card">
+            <div class="col-md-9">
+                <!-- Analysis Content -->
+                <div class="card mb-4">
                     <div class="card-body">
                         <h2 class="card-title">{{ analysis.title }}</h2>
                         {% if analysis.description %}
@@ -52,14 +62,13 @@
                         <div class="text-muted small">
                             <i class="bi bi-clock me-1"></i>Shared on {{ analysis.created_at.strftime('%Y-%m-%d %H:%M UTC') }}
                             • <i class="bi bi-eye me-1"></i>{{ analysis.views }} views
+                            • <i class="bi bi-person me-1"></i>{{ collaborator.name }}
                         </div>
                     </div>
                 </div>
-            </div>
 
-            <!-- Data Preview Section -->
-            <div class="col-12 mt-4">
-                <div class="card">
+                <!-- Data Preview Section -->
+                <div class="card mb-4">
                     <div class="card-header">
                         <h5 class="card-title">Data Preview</h5>
                     </div>
@@ -70,10 +79,8 @@
                         </div>
                     </div>
                 </div>
-            </div>
 
-            <!-- Visualizations Section -->
-            <div class="col-12 mt-4">
+                <!-- Visualizations Section -->
                 <div class="card">
                     <div class="card-header">
                         <h5 class="card-title">Visualizations</h5>
@@ -81,17 +88,45 @@
                     <div class="card-body">
                         <div class="row">
                             <div class="col-md-6 mb-4">
-                                <div id="chart1" style="height: 400px;"></div>
+                                <div id="chart1" class="chart-container" style="height: 400px;"></div>
                             </div>
                             <div class="col-md-6 mb-4">
-                                <div id="chart2" style="height: 400px;"></div>
+                                <div id="chart2" class="chart-container" style="height: 400px;"></div>
                             </div>
                             <div class="col-md-6 mb-4">
-                                <div id="chart3" style="height: 400px;"></div>
+                                <div id="chart3" class="chart-container" style="height: 400px;"></div>
                             </div>
                             <div class="col-md-6 mb-4">
-                                <div id="chart4" style="height: 400px;"></div>
+                                <div id="chart4" class="chart-container" style="height: 400px;"></div>
                             </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Comments Section -->
+            <div class="col-md-3">
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="card-title">
+                            <i class="bi bi-chat-dots me-2"></i>Discussion
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <div id="commentsList" class="comments-container mb-3"></div>
+                        <div class="comment-form">
+                            <div class="mb-3">
+                                <label for="commentAuthor" class="form-label">Your Name</label>
+                                <input type="text" class="form-control" id="commentAuthor" 
+                                       value="{{ collaborator.name }}" readonly>
+                            </div>
+                            <div class="mb-3">
+                                <label for="commentContent" class="form-label">Your Comment</label>
+                                <textarea class="form-control" id="commentContent" rows="3"></textarea>
+                            </div>
+                            <button class="btn btn-primary" id="submitComment">
+                                <i class="bi bi-send me-1"></i>Post Comment
+                            </button>
                         </div>
                     </div>
                 </div>
@@ -104,6 +139,7 @@
     <script>
         document.addEventListener('DOMContentLoaded', () => {
             const analysisData = {{ analysis.data | tojson | safe }};
+            const shareId = "{{ analysis.share_id }}";
             
             // Initialize charts
             initializeCharts();
@@ -112,7 +148,88 @@
             updateDataStats(analysisData);
             updatePreviewTable(analysisData.preview);
             updateVisualizations(analysisData);
+
+            // Initialize comments
+            loadComments();
+            initializeCommentForm();
+            
+            // Start collaboration tracking
+            startCollaborationTracking();
         });
+
+        function loadComments() {
+            fetch(`/analysis/{{ analysis.share_id }}/comments`)
+                .then(response => response.json())
+                .then(comments => {
+                    const commentsList = document.getElementById('commentsList');
+                    commentsList.innerHTML = comments.map(comment => `
+                        <div class="comment mb-3">
+                            <div class="d-flex align-items-start">
+                                <div class="me-2">
+                                    <i class="bi bi-person-circle"></i>
+                                </div>
+                                <div>
+                                    <div class="fw-bold">${comment.author_name}</div>
+                                    <div class="comment-content">${comment.content}</div>
+                                    <small class="text-muted">${comment.created_at}</small>
+                                    ${comment.replies ? `
+                                        <div class="replies mt-2 ms-3">
+                                            ${comment.replies.map(reply => `
+                                                <div class="reply mb-2">
+                                                    <div class="fw-bold">${reply.author_name}</div>
+                                                    <div class="comment-content">${reply.content}</div>
+                                                    <small class="text-muted">${reply.created_at}</small>
+                                                </div>
+                                            `).join('')}
+                                        </div>
+                                    ` : ''}
+                                </div>
+                            </div>
+                        </div>
+                    `).join('');
+                });
+        }
+
+        function initializeCommentForm() {
+            const submitButton = document.getElementById('submitComment');
+            const contentInput = document.getElementById('commentContent');
+            const authorInput = document.getElementById('commentAuthor');
+
+            submitButton.addEventListener('click', () => {
+                const content = contentInput.value.trim();
+                if (!content) return;
+
+                fetch(`/analysis/{{ analysis.share_id }}/comments`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        content: content,
+                        author_name: authorInput.value
+                    })
+                })
+                .then(response => response.json())
+                .then(() => {
+                    contentInput.value = '';
+                    loadComments();
+                });
+            });
+        }
+
+        function startCollaborationTracking() {
+            function updateCollaborators() {
+                fetch(`/analysis/{{ analysis.share_id }}/collaborators`)
+                    .then(response => response.json())
+                    .then(collaborators => {
+                        document.getElementById('collaboratorCount').textContent = collaborators.length;
+                    });
+            }
+
+            // Update immediately and then every 30 seconds
+            updateCollaborators();
+            setInterval(updateCollaborators, 30000);
+        }
     </script>
 </body>
 </html>

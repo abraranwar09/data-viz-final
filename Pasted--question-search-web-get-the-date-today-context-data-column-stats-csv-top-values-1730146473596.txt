@@ -1,0 +1,33 @@
+{"question":"search web get the date today","context":{"data":{"column_stats":{"```csv":{"top_values":{"1,Flowering,90,65,6,4.5,High,Intense,Very High,600,\"Rich forest aroma with a hint of coffee and chocolate, strong couch-lock effect.\"":1,"2,Vegetative,45,50,5.5,4,Medium,Moderate,High,500,\"Earthy with slight vanilla undertones, promotes tranquility and relaxation.\"":1,"3,Flowering,100,70,7,4.2,High,Strong,High,625,\"Pungent pine and lemon scent, known for mental clarity and focus.\"":1,"4,Seedling,12,20,2.5,3.7,Low,Mild,Medium,285,\"Creamy texture aroma, soft buzz, minimal THC.\"":1,"Plant ID,Growth Stage,Height (cm),Leaf Width (mm),Internode Length (cm),Stem Thickness (mm),Flower Density,Aroma Intensity,Trichome Density,Yield Potential (g),Description":1},"type":"categorical","unique_values":32}},"columns":["```csv"],"preview":[{"```csv":"Plant ID,Growth Stage,Height (cm),Leaf Width (mm),Internode Length (cm),Stem Thickness (mm),Flower Density,Aroma Intensity,Trichome Density,Yield Potential (g),Description"},{"```csv":"1,Flowering,90,65,6,4.5,High,Intense,Very High,600,\"Rich forest aroma with a hint of coffee and chocolate, strong couch-lock effect.\""},{"```csv":"2,Vegetative,45,50,5.5,4,Medium,Moderate,High,500,\"Earthy with slight vanilla undertones, promotes tranquility and relaxation.\""},{"```csv":"3,Flowering,100,70,7,4.2,High,Strong,High,625,\"Pungent pine and lemon scent, known for mental clarity and focus.\""},{"```csv":"4,Seedling,12,20,2.5,3.7,Low,Mild,Medium,285,\"Creamy texture aroma, soft buzz, minimal THC.\""}],"summary":{"categorical_columns":1,"columns":1,"memory_usage":"0.01 MB","numeric_columns":0,"rows":32}},"question":"search web get the date today"}}
+content-length	153
+content-type	application/json
+date	Mon, 28 Oct 2024 20:14:02 GMT
+replit-cluster	riker
+server	Werkzeug/3.0.6 Python/3.11.9
+x-robots-tag	none, noindex, noarchive, nofollow, nositelinkssearchbox, noimageindex, none, noindex, noarchive, nofollow, nositelinkssearchbox, noimageindex
+Content-Type	application/json
+{"response":{"answer":"An error occurred while processing your request: Object of type coroutine is not JSON serializable","confidence":0,"sources":[]}}
+Data Analysis Dashboard
+Home
+Shared Analyses
+Drag and drop your data file here
+Supported formats: CSV, TSV, Excel (xlsx/xls), JSON
+
+Maximum file size: 50MB
+
+Data Preview
+Total Rows
+32
+Total Columns
+1
+Numeric Columns
+0
+Memory Usage
+0.01 MB
+```csv
+Plant ID,Growth Stage,Height (cm),Leaf Width (mm),Internode Length (cm),Stem Thickness (mm),Flower Density,Aroma Intensity,Trichome Density,Yield Potential (g),Description
+1,Flowering,90,65,6,4.5,High,Intense,Very High,600,"Rich forest aroma with a hint of coffee and chocolate, strong couch-lock effect."
+2,Vegetative,45,50,5.5,4,Medium,Moderate,High,500,"Earthy with slight vanilla undertones, promotes tranquility and relaxation."
+3,Flowering,100,70,7,4.2,High,Strong,High,625,"Pungent pine and lemon scent, known for mental clarity and focus."
+4,Seedling,12,20,2.5,3.7,Low,Mild,Medium,285,"Creamy texture aroma, soft buzz, minimal THC."
+Visualizations

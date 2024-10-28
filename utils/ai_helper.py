@@ -11,7 +11,7 @@ from openai.types.chat import (
 )
 from functools import lru_cache
 import json
-import httpx
+import requests
 from typing import Dict, Any, Optional, List, Union
 
 class APIKeyError(Exception):
@@ -59,67 +59,53 @@ def clean_data_context(data: Dict[str, Any]) -> Dict[str, Any]:
         print(f"Error cleaning data context: {str(e)}")
         return data
 
-async def perplexity_web_search(query: str) -> str:
+def perplexity_web_search(query: str) -> str:
     """Search the web using Perplexity API with improved error handling."""
     if not PERPLEXITY_API_KEY:
         raise APIKeyError("Perplexity API key is not configured")
 
     try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            response = await client.post(
-                "https://api.perplexity.ai/chat/completions",
-                headers={
-                    "Authorization": f"Bearer {PERPLEXITY_API_KEY}",
-                    "Content-Type": "application/json",
-                    "Accept": "application/json"
-                },
-                json={
-                    "model": "sonar-small-online",
-                    "messages": [
-                        {
-                            "role": "system",
-                            "content": "You are a helpful assistant that provides accurate and up-to-date information based on web searches."
-                        },
-                        {
-                            "role": "user",
-                            "content": f"Search and summarize relevant information for: {query}"
-                        }
-                    ]
-                }
-            )
-            
-            if response.status_code == 200:
-                result = response.json()
-                if "choices" in result and len(result["choices"]) > 0:
-                    return result["choices"][0]["message"]["content"]
-                raise WebSearchError("Invalid response format from Perplexity API")
-            elif response.status_code == 401:
-                raise APIKeyError("Invalid Perplexity API key")
-            elif response.status_code == 429:
-                raise WebSearchError("Rate limit exceeded for Perplexity API")
-            else:
-                raise WebSearchError(f"Perplexity API error: {response.status_code}")
+        response = requests.post(
+            "https://api.perplexity.ai/chat/completions",
+            headers={
+                "Authorization": f"Bearer {PERPLEXITY_API_KEY}",
+                "Content-Type": "application/json",
+                "Accept": "application/json"
+            },
+            json={
+                "model": "sonar-small-online",
+                "messages": [
+                    {
+                        "role": "system",
+                        "content": "You are a helpful assistant that provides accurate and up-to-date information based on web searches."
+                    },
+                    {
+                        "role": "user",
+                        "content": f"Search and summarize relevant information for: {query}"
+                    }
+                ]
+            },
+            timeout=30
+        )
+        
+        if response.status_code == 200:
+            result = response.json()
+            if "choices" in result and len(result["choices"]) > 0:
+                return result["choices"][0]["message"]["content"]
+            raise WebSearchError("Invalid response format from Perplexity API")
+        elif response.status_code == 401:
+            raise APIKeyError("Invalid Perplexity API key")
+        elif response.status_code == 429:
+            raise WebSearchError("Rate limit exceeded for Perplexity API")
+        else:
+            raise WebSearchError(f"Perplexity API error: {response.status_code}")
 
-    except httpx.TimeoutException:
+    except requests.Timeout:
         raise WebSearchError("Request to Perplexity API timed out")
-    except httpx.RequestError as e:
+    except requests.RequestException as e:
         raise WebSearchError(f"Network error during web search: {str(e)}")
     except Exception as e:
         raise WebSearchError(f"Unexpected error during web search: {str(e)}")
-
-@lru_cache(maxsize=100)
-def cached_openai_request(prompt: str, context_hash: str) -> Dict[str, Any]:
-    """Cache OpenAI requests to avoid duplicate processing."""
-    try:
-        context = json.loads(context_hash)
-        return send_openai_request(prompt, context)
-    except Exception as e:
-        print(f"Error in cached_openai_request: {str(e)}")
-        return {
-            "answer": "I encountered an error while processing your request. Please try again later.",
-            "confidence": 0,
-            "sources": []
-        }
 
 def format_data_context(data: Dict[str, Any]) -> str:
     """Format the data context for the AI prompt."""
@@ -143,6 +129,20 @@ def format_data_context(data: Dict[str, Any]) -> str:
     except Exception as e:
         print(f"Error formatting data context: {str(e)}")
         return str(data)
+
+@lru_cache(maxsize=100)
+def cached_openai_request(prompt: str, context_hash: str) -> Dict[str, Any]:
+    """Cache OpenAI requests to avoid duplicate processing."""
+    try:
+        context = json.loads(context_hash)
+        return send_openai_request(prompt, context)
+    except Exception as e:
+        print(f"Error in cached_openai_request: {str(e)}")
+        return {
+            "answer": "I encountered an error while processing your request. Please try again later.",
+            "confidence": 0,
+            "sources": []
+        }
 
 def send_openai_request(prompt: str, context: Dict[str, Any]) -> Dict[str, Any]:
     """Send request to OpenAI with function calling capability."""
@@ -266,16 +266,19 @@ def generate_visualizations(data: Dict[str, Any]) -> Dict[str, Any]:
 
         system_message: ChatCompletionSystemMessageParam = {
             "role": "system",
-            "content": "You are a data visualization expert."
+            "content": """You are a data visualization expert. You can create visualizations using ECharts and Mermaid.js.
+            Analyze the data and choose the most appropriate visualization types including charts, graphs, and diagrams."""
         }
 
         user_message: ChatCompletionUserMessageParam = {
             "role": "user",
-            "content": f"""Analyze this dataset and identify 4 key data comparisons that provide valuable insights. 
-            Create a 2x2 grid dashboard using appropriate chart types for each insight. 
-            Generate a single, self-contained HTML file that includes all necessary HTML, CSS, and JavaScript code. 
-            Include legends and supplementary information. The visualization should use ECharts library. 
-            Only return the complete code that can be directly rendered.
+            "content": f"""Analyze this dataset and identify 4 key insights that would benefit from visualization. 
+            Create a mixed dashboard using appropriate visualization types (ECharts and Mermaid.js) for each insight. 
+            Consider using:
+            - ECharts for statistical visualizations (charts, plots)
+            - Mermaid.js for relationship diagrams, flows, and sequences
+            Generate a single, self-contained HTML file that includes all necessary visualization code.
+            Include proper titles, legends, and explanatory text.
 
             Dataset Information:
             {data_context}

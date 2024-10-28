@@ -1,5 +1,3 @@
-let initializationAttempts = 0;
-const MAX_INITIALIZATION_ATTEMPTS = 3;
 let chartInstances = [];
 
 function initializeCharts() {
@@ -15,39 +13,56 @@ function initializeCharts() {
             throw new Error('Application state not initialized');
         }
 
-        // Validate chart containers
-        const containers = ['chart1', 'chart2', 'chart3', 'chart4'];
-        const containerElements = containers.map(id => {
-            const element = document.getElementById(id);
-            if (!element) {
-                throw new Error(`Chart container #${id} not found`);
-            }
-            return element;
-        });
-
         // Clean up existing chart instances
         cleanupCharts();
 
         // Initialize chart instances
-        containerElements.forEach(element => {
+        const containers = document.querySelectorAll('.chart-container');
+        if (!containers || containers.length === 0) {
+            throw new Error('No chart containers found');
+        }
+
+        containers.forEach(container => {
+            if (!container || !container.id) {
+                console.warn('Invalid chart container found');
+                return;
+            }
+
             try {
-                const chart = echarts.init(element);
+                const chart = echarts.init(container);
                 chartInstances.push(chart);
             } catch (error) {
-                console.error(`Failed to initialize chart for ${element.id}:`, error);
-                throw error;
+                console.error(`Failed to initialize chart for ${container.id}:`, error);
             }
         });
 
+        // Initialize Mermaid
+        if (window.mermaid) {
+            mermaid.initialize({
+                startOnLoad: true,
+                theme: 'dark',
+                securityLevel: 'loose',
+                themeVariables: {
+                    fontFamily: 'var(--bs-body-font-family)',
+                    primaryColor: 'var(--bs-primary)',
+                    primaryTextColor: 'var(--bs-primary-text)',
+                    primaryBorderColor: 'var(--bs-border-color)',
+                    lineColor: 'var(--bs-border-color)',
+                    secondaryColor: 'var(--bs-secondary)',
+                    tertiaryColor: 'var(--bs-tertiary)'
+                }
+            });
+        }
+
         window.appState.initialized = true;
-        initializationAttempts = 0;
 
         // Add resize handler
-        setupResizeHandler();
+        window.removeEventListener('resize', handleResize);
+        window.addEventListener('resize', handleResize);
 
     } catch (error) {
         console.error('Failed to initialize charts:', error);
-        handleChartInitializationError(error);
+        showError('Failed to initialize visualization components. Please refresh the page.');
     }
 }
 
@@ -64,15 +79,46 @@ function cleanupCharts() {
     chartInstances = [];
 }
 
-function handleChartInitializationError(error) {
-    initializationAttempts++;
-    
-    if (initializationAttempts < MAX_INITIALIZATION_ATTEMPTS) {
-        console.warn(`Chart initialization attempt ${initializationAttempts} failed, retrying in 1 second...`);
-        setTimeout(initializeCharts, 1000);
-    } else {
-        console.error('Failed to initialize charts after multiple attempts:', error);
-        showError('Failed to initialize visualization components. Please refresh the page.');
+function handleResize() {
+    chartInstances.forEach(chart => {
+        if (chart && typeof chart.resize === 'function') {
+            try {
+                chart.resize();
+            } catch (error) {
+                console.warn('Error resizing chart:', error);
+            }
+        }
+    });
+}
+
+function showLoadingState() {
+    const loadingDiv = document.querySelector('.visualization-loading');
+    if (loadingDiv) {
+        loadingDiv.classList.remove('d-none');
+    }
+}
+
+function hideLoadingState() {
+    const loadingDiv = document.querySelector('.visualization-loading');
+    if (loadingDiv) {
+        loadingDiv.classList.add('d-none');
+    }
+}
+
+async function renderMermaidDiagram(container, code) {
+    if (!window.mermaid) {
+        console.warn('Mermaid.js not loaded');
+        return false;
+    }
+
+    try {
+        const id = `mermaid-${Math.random().toString(36).substr(2, 9)}`;
+        container.innerHTML = `<div class="mermaid" id="${id}">${code}</div>`;
+        await mermaid.run();
+        return true;
+    } catch (error) {
+        console.error('Error rendering Mermaid diagram:', error);
+        return false;
     }
 }
 
@@ -83,11 +129,12 @@ async function updateVisualizations(data) {
     }
 
     try {
-        // Ensure chart containers exist
-        const containers = ['chart1', 'chart2', 'chart3', 'chart4'];
-        const missingContainers = containers.filter(id => !document.getElementById(id));
-        if (missingContainers.length > 0) {
-            throw new Error(`Missing chart containers: ${missingContainers.join(', ')}`);
+        showLoadingState();
+
+        // Validate containers
+        const containers = document.querySelectorAll('.chart-container');
+        if (!containers || containers.length === 0) {
+            throw new Error('Chart containers not found');
         }
 
         // Request AI-generated visualizations
@@ -108,7 +155,7 @@ async function updateVisualizations(data) {
             throw new Error(result.error || 'Failed to generate visualizations');
         }
 
-        // Clear existing charts
+        // Clean up existing charts
         cleanupCharts();
 
         // Create a temporary container to parse the HTML
@@ -117,77 +164,56 @@ async function updateVisualizations(data) {
 
         // Add generated styles
         const styles = tempContainer.getElementsByTagName('style');
-        for (let style of styles) {
+        Array.from(styles).forEach(style => {
             document.head.appendChild(style.cloneNode(true));
-        }
+        });
 
-        // Initialize new charts with retry logic
-        let retryCount = 0;
-        const maxRetries = 3;
+        // Process visualization containers
+        const visualizationElements = tempContainer.querySelectorAll('[id^="chart"]');
+        await Promise.all(Array.from(visualizationElements).map(async (element, index) => {
+            const container = containers[index];
+            if (!container) return;
 
-        const initializeNewCharts = () => {
-            try {
-                const chartElements = document.querySelectorAll('[id^="chart"]');
-                chartElements.forEach(element => {
-                    const chart = echarts.init(element);
+            const content = element.innerHTML;
+            
+            // Check if content is a Mermaid diagram
+            if (content.trim().startsWith('graph') || 
+                content.trim().startsWith('sequenceDiagram') || 
+                content.trim().startsWith('classDiagram')) {
+                await renderMermaidDiagram(container, content);
+            } else {
+                // Assume ECharts
+                try {
+                    const chart = echarts.init(container);
                     chartInstances.push(chart);
-                });
-
-                // Execute visualization scripts
-                const scripts = tempContainer.getElementsByTagName('script');
-                for (let script of scripts) {
-                    if (script.textContent) {
-                        eval(script.textContent);
-                    }
-                }
-
-                window.appState.initialized = true;
-            } catch (error) {
-                if (retryCount < maxRetries) {
-                    retryCount++;
-                    console.warn(`Retry ${retryCount} of ${maxRetries} for chart initialization`);
-                    setTimeout(initializeNewCharts, 1000);
-                } else {
-                    throw error;
+                    const options = JSON.parse(content);
+                    chart.setOption(options);
+                } catch (error) {
+                    console.error('Error initializing chart:', error);
                 }
             }
-        };
+        }));
 
-        initializeNewCharts();
+        // Execute any additional scripts
+        const scripts = tempContainer.getElementsByTagName('script');
+        Array.from(scripts).forEach(script => {
+            if (script.textContent) {
+                try {
+                    eval(script.textContent);
+                } catch (error) {
+                    console.error('Error executing visualization script:', error);
+                }
+            }
+        });
+
+        window.appState.initialized = true;
+        hideLoadingState();
 
     } catch (error) {
         console.error('Error updating visualizations:', error);
         showError('Failed to update visualizations: ' + error.message);
+        hideLoadingState();
     }
-}
-
-function setupResizeHandler() {
-    const resizeHandler = debounce(() => {
-        chartInstances.forEach(chart => {
-            if (chart && typeof chart.resize === 'function') {
-                try {
-                    chart.resize();
-                } catch (error) {
-                    console.warn('Error resizing chart:', error);
-                }
-            }
-        });
-    }, 250);
-
-    window.removeEventListener('resize', resizeHandler);
-    window.addEventListener('resize', resizeHandler);
-}
-
-function debounce(func, wait) {
-    let timeout;
-    return function executedFunction(...args) {
-        const later = () => {
-            clearTimeout(timeout);
-            func(...args);
-        };
-        clearTimeout(timeout);
-        timeout = setTimeout(later, wait);
-    };
 }
 
 function showError(message) {
