@@ -2,6 +2,17 @@ let chartInstances = [];
 let initializationAttempts = 0;
 const MAX_RETRY_ATTEMPTS = 3;
 const RETRY_DELAY = 1000;
+const DEBUG = true;
+
+function log(...args) {
+    if (DEBUG) {
+        console.log('[Visualization]', new Date().toISOString(), ...args);
+    }
+}
+
+function logError(...args) {
+    console.error('[Visualization Error]', new Date().toISOString(), ...args);
+}
 
 function initializeCharts() {
     // Check if DOM is loaded
@@ -9,7 +20,6 @@ function initializeCharts() {
         document.addEventListener('DOMContentLoaded', () => initializeChartsWithRetry());
         return;
     }
-
     initializeChartsWithRetry();
 }
 
@@ -89,28 +99,6 @@ async function initializeChartsWithRetry(attempt = 0) {
             throw new Error(`Chart initialization errors: ${initializationErrors.join('; ')}`);
         }
 
-        // Initialize Mermaid with error handling
-        if (window.mermaid) {
-            try {
-                await mermaid.initialize({
-                    startOnLoad: true,
-                    theme: 'dark',
-                    securityLevel: 'loose',
-                    themeVariables: {
-                        fontFamily: 'var(--bs-body-font-family)',
-                        primaryColor: 'var(--bs-primary)',
-                        primaryTextColor: 'var(--bs-primary-text)',
-                        primaryBorderColor: 'var(--bs-border-color)',
-                        lineColor: 'var(--bs-border-color)',
-                        secondaryColor: 'var(--bs-secondary)',
-                        tertiaryColor: 'var(--bs-tertiary)'
-                    }
-                });
-            } catch (error) {
-                console.error('Mermaid initialization error:', error);
-            }
-        }
-
         hideLoadingState();
         window.appState.initialized = true;
         initializationAttempts = 0; // Reset counter after successful initialization
@@ -157,121 +145,120 @@ function cleanupCharts() {
 }
 
 async function updateVisualizations(data) {
+    log('Starting visualization update with data:', data);
+    
     if (!window.appState || !window.appState.initialized) {
-        console.error('Application state not initialized');
+        logError('Application state not initialized');
         return;
     }
 
     try {
-        showLoadingState();
-
-        // Validate containers
         const containers = document.querySelectorAll('.chart-container');
+        log('Found chart containers:', containers.length);
+        
         if (!containers || containers.length === 0) {
             throw new Error('Chart containers not found');
         }
 
-        // Request AI-generated visualizations with timeout
-        const response = await Promise.race([
-            fetch('/visualize', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify(data)
-            }),
-            new Promise((_, reject) => 
-                setTimeout(() => reject(new Error('Visualization request timeout')), 30000)
-            )
-        ]);
+        log('Sending visualization request to server');
+        const response = await fetch('/visualize', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(data)
+        });
 
+        log('Server response status:', response.status);
         if (!response.ok) {
-            throw new Error(`Failed to generate visualizations: ${response.statusText}`);
+            const errorText = await response.text();
+            logError('Server response not OK:', response.status, errorText);
+            throw new Error(`Failed to generate visualizations: ${response.statusText}. Details: ${errorText}`);
         }
 
         const result = await response.json();
-        if (!result.success) {
-            throw new Error(result.error || 'Failed to generate visualizations');
+        log('Received visualization data:', result);
+
+        if (!result.success || !result.visualizations) {
+            logError('Invalid visualization data:', result);
+            throw new Error(result.error || 'Invalid visualization data received');
         }
 
-        // Clean up existing charts
-        cleanupCharts();
+        // Render visualizations one at a time
+        for (let i = 0; i < containers.length; i++) {
+            const container = containers[i];
+            const vizConfig = result.visualizations[i];
+            
+            if (!vizConfig) continue;
 
-        // Process visualization containers
-        const tempContainer = document.createElement('div');
-        tempContainer.innerHTML = result.visualization_code;
-
-        // Add generated styles
-        const styles = tempContainer.getElementsByTagName('style');
-        Array.from(styles).forEach(style => {
-            document.head.appendChild(style.cloneNode(true));
-        });
-
-        // Process each visualization
-        const visualizationElements = tempContainer.querySelectorAll('[id^="chart"]');
-        await Promise.all(Array.from(visualizationElements).map(async (element, index) => {
-            const container = containers[index];
-            if (!container) return;
+            log(`Rendering visualization ${i + 1} in container ${container.id}`);
+            
+            // Show loading state for current container
+            container.innerHTML = `
+                <div class="loading-indicator">
+                    <div class="loading-bar"></div>
+                    <div class="loading-bar"></div>
+                    <div class="loading-bar"></div>
+                </div>`;
 
             try {
-                const content = element.innerHTML.trim();
-                
-                if (content.startsWith('graph') || 
-                    content.startsWith('sequenceDiagram') || 
-                    content.startsWith('classDiagram')) {
-                    await renderMermaidDiagram(container, content);
-                } else {
-                    // Initialize ECharts with error boundaries
-                    const chart = echarts.init(container, null, {
-                        renderer: 'canvas',
-                        useDirtyRect: true
-                    });
-                    
-                    const options = JSON.parse(content);
-                    await new Promise((resolve, reject) => {
-                        try {
-                            chart.setOption(options);
-                            resolve();
-                        } catch (error) {
-                            reject(error);
-                        }
-                    });
-
-                    chartInstances.push({
-                        chart,
-                        container: container.id,
-                        resizeObserver: new ResizeObserver(() => chart.resize())
-                    });
+                // Clean up existing chart
+                const existingInstance = chartInstances.find(ci => ci.container === container.id);
+                if (existingInstance) {
+                    existingInstance.resizeObserver.disconnect();
+                    existingInstance.chart.dispose();
+                    chartInstances = chartInstances.filter(ci => ci.container !== container.id);
                 }
+
+                // Initialize new chart
+                const chart = echarts.init(container, null, {
+                    renderer: 'canvas',
+                    useDirtyRect: true
+                });
+                
+                // Add small delay between renders
+                await new Promise(resolve => setTimeout(resolve, 100));
+                
+                log(`Setting options for chart ${i + 1}:`, vizConfig);
+                chart.setOption(vizConfig);
+                
+                const resizeObserver = new ResizeObserver(() => {
+                    log(`Resizing chart ${i + 1}`);
+                    chart.resize();
+                });
+                resizeObserver.observe(container);
+                
+                chartInstances.push({
+                    chart,
+                    container: container.id,
+                    resizeObserver
+                });
+                log(`Successfully rendered chart ${i + 1}`);
             } catch (error) {
-                console.error(`Error initializing visualization ${index + 1}:`, error);
+                logError(`Error rendering visualization ${i + 1}:`, error);
                 container.innerHTML = `
                     <div class="alert alert-warning">
                         <i class="bi bi-exclamation-triangle me-2"></i>
-                        Failed to load visualization
+                        Failed to load visualization: ${error.message}
                         <button class="btn btn-sm btn-outline-primary ms-2" onclick="updateVisualizations(window.appState.currentData)">
                             <i class="bi bi-arrow-clockwise me-1"></i>Retry
                         </button>
                     </div>`;
             }
-        }));
-
-        hideLoadingState();
+        }
 
     } catch (error) {
-        console.error('Error updating visualizations:', error);
-        // Show error state in all containers
+        logError('Error updating visualizations:', error);
         document.querySelectorAll('.chart-container').forEach(container => {
             container.innerHTML = `
                 <div class="alert alert-warning">
                     <i class="bi bi-exclamation-triangle me-2"></i>
-                    Failed to load visualization
+                    Failed to load visualization: ${error.message}
                     <button class="btn btn-sm btn-outline-primary ms-2" onclick="updateVisualizations(window.appState.currentData)">
                         <i class="bi bi-arrow-clockwise me-1"></i>Retry
                     </button>
                 </div>`;
         });
-        hideLoadingState();
     }
 }
 
@@ -290,36 +277,6 @@ function hideLoadingState() {
     document.querySelectorAll('.loading-indicator').forEach(indicator => {
         indicator.remove();
     });
-}
-
-async function renderMermaidDiagram(container, code) {
-    if (!window.mermaid) {
-        console.warn('Mermaid.js not loaded');
-        container.innerHTML = `
-            <div class="alert alert-warning">
-                <i class="bi bi-exclamation-triangle me-2"></i>
-                Mermaid.js not available
-            </div>`;
-        return false;
-    }
-
-    try {
-        const id = `mermaid-${Math.random().toString(36).substr(2, 9)}`;
-        container.innerHTML = `<div class="mermaid" id="${id}">${code}</div>`;
-        await mermaid.run();
-        return true;
-    } catch (error) {
-        console.error('Error rendering Mermaid diagram:', error);
-        container.innerHTML = `
-            <div class="alert alert-warning">
-                <i class="bi bi-exclamation-triangle me-2"></i>
-                Failed to render diagram
-                <button class="btn btn-sm btn-outline-primary ms-2" onclick="renderMermaidDiagram(this.closest('.chart-container'), '${code.replace(/'/g, "\\'")}')">
-                    <i class="bi bi-arrow-clockwise me-1"></i>Retry
-                </button>
-            </div>`;
-        return false;
-    }
 }
 
 function showError(message) {

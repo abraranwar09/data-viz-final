@@ -1,27 +1,22 @@
 import os
-from typing import Dict, Any, List, Optional, Union
+from typing import Dict, Any, List, Optional
 from openai import OpenAI
 from openai.types.chat import (
     ChatCompletionMessageParam,
     ChatCompletionSystemMessageParam,
     ChatCompletionUserMessageParam,
-    ChatCompletionFunctionMessageParam,
-    ChatCompletionAssistantMessageParam
+    ChatCompletionFunctionMessageParam
 )
-from functools import lru_cache
 import json
 import requests
+import logging
+
+# Set up logging
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger('ai_helper')
 
 class APIKeyError(Exception):
     """Exception raised for missing or invalid API keys."""
-    pass
-
-class WebSearchError(Exception):
-    """Exception raised for web search related errors."""
-    pass
-
-class AIModelError(Exception):
-    """Exception raised for AI model related errors."""
     pass
 
 def validate_api_keys():
@@ -43,7 +38,8 @@ except APIKeyError as e:
     print(f"API Key Error: {str(e)}")
     openai_client = None
 
-def perplexity_web_search(query: str) -> str:
+def web_search(query: str) -> str:
+    """Perform web search using Perplexity API"""
     try:
         response = requests.post(
             "https://api.perplexity.ai/chat/completions",
@@ -52,7 +48,7 @@ def perplexity_web_search(query: str) -> str:
                 "Content-Type": "application/json"
             },
             json={
-                "model": "sonar-small-online",
+                "model": "llama-3.1-sonar-small-128k-online",
                 "messages": [
                     {
                         "role": "system",
@@ -74,92 +70,133 @@ def perplexity_web_search(query: str) -> str:
     except Exception as e:
         return f"Error performing web search: {str(e)}"
 
-def send_openai_request(prompt: str, context: Dict[str, Any]) -> Dict[str, Any]:
-    """Send request to OpenAI with function calling capability."""
+def get_ai_insights(question: str, context: Dict[str, Any]) -> Dict[str, Any]:
+    """Get AI insights with proper data context handling."""
     if not openai_client:
         raise APIKeyError("OpenAI client is not properly initialized")
 
     try:
+        # Format the data context
         data_context = format_data_context(context.get('data'))
+        system_prompt = context.get('system_prompt')
         
+        # Prepare system message
         system_message: ChatCompletionSystemMessageParam = {
             "role": "system",
-            "content": (
-                "You are a helpful assistant. No data is currently loaded, but you can still help with "
-                "general questions or guide users on data analysis concepts."
-            ) if not data_context else (
+            "content": system_prompt if system_prompt else (
                 "You are a data analysis assistant with access to the uploaded document data. "
-                "You can analyze the data and provide insights. If you need additional information "
-                "from the web, you can use the search_web function. Format your responses using "
-                "markdown with proper headings, lists, and tables when appropriate."
+                "You can analyze the data and provide insights. You can use the web_search function "
+                "for additional information and create_visualization function to generate charts. "
+                "Format your responses using markdown."
             )
         }
 
+        # Prepare user message
         user_message: ChatCompletionUserMessageParam = {
             "role": "user",
-            "content": f"Context:\n{data_context}\n\nQuestion: {prompt}" if data_context else prompt
+            "content": f"Context:\n{data_context}\n\nQuestion: {question}" if data_context else question
         }
 
         messages: List[ChatCompletionMessageParam] = [system_message, user_message]
 
+        # Make the API call with both tools
         try:
             chat_completion = openai_client.chat.completions.create(
-                model="gpt-4",
+                model="gpt-4o",
                 messages=messages,
-                functions=[{
-                    "name": "search_web",
-                    "description": "Search the web for additional information or context",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "query": {
-                                "type": "string",
-                                "description": "The search query"
-                            }
-                        },
-                        "required": ["query"]
+                functions=[
+                    {
+                        "name": "web_search",
+                        "description": "Search the web for additional information or context",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "query": {
+                                    "type": "string",
+                                    "description": "The search query"
+                                }
+                            },
+                            "required": ["query"]
+                        }
+                    },
+                    {
+                        "name": "create_visualization",
+                        "description": "Create a data visualization using ECharts",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "chart_type": {
+                                    "type": "string",
+                                    "enum": ["bar", "line", "scatter", "pie", "boxplot", "heatmap"],
+                                    "description": "Type of chart to create"
+                                },
+                                "title": {
+                                    "type": "string",
+                                    "description": "Chart title"
+                                },
+                                "x_axis": {
+                                    "type": "string",
+                                    "description": "Column name for x-axis"
+                                },
+                                "y_axis": {
+                                    "type": "string",
+                                    "description": "Column name for y-axis"
+                                },
+                                "additional_options": {
+                                    "type": "object",
+                                    "description": "Additional ECharts configuration options"
+                                }
+                            },
+                            "required": ["chart_type", "title"]
+                        }
                     }
-                }],
+                ],
                 function_call="auto"
             )
         except Exception as e:
-            raise AIModelError(f"Error calling OpenAI API: {str(e)}")
+            raise Exception(f"Error calling OpenAI API: {str(e)}")
 
         message = chat_completion.choices[0].message
         final_content = message.content or ""
 
-        # Handle function calls for web search
+        # Handle function calls
         if message.function_call:
             try:
-                function_name = message.function_call.name
                 function_args = json.loads(message.function_call.arguments)
                 
-                if function_name == "search_web":
-                    search_results = perplexity_web_search(function_args.get("query"))
-                    
-                    # Create a new message list including the search results
-                    search_messages = messages + [
-                        ChatCompletionMessageParam(
-                            role="assistant",
-                            content=message.content,
-                            function_call=message.function_call
-                        ),
-                        ChatCompletionMessageParam(
-                            role="function",
-                            name="search_web",
-                            content=search_results
-                        )
-                    ]
-
-                    # Get final response incorporating search results
-                    final_response = openai_client.chat.completions.create(
-                        model="gpt-4",
-                        messages=search_messages
+                if message.function_call.name == "web_search":
+                    search_results = web_search(function_args.get("query"))
+                    function_response = search_results
+                elif message.function_call.name == "create_visualization":
+                    viz_config = generate_visualization_config(
+                        function_args,
+                        context.get('data', {})
                     )
-                    final_content = final_response.choices[0].message.content or "No response generated"
+                    function_response = json.dumps(viz_config)
+                
+                # Create a new message list including the function results
+                new_messages = messages + [
+                    ChatCompletionMessageParam(
+                        role="assistant",
+                        content=message.content,
+                        function_call=message.function_call
+                    ),
+                    ChatCompletionMessageParam(
+                        role="function",
+                        name=message.function_call.name,
+                        content=function_response
+                    )
+                ]
+
+                # Get final response incorporating function results
+                final_response = openai_client.chat.completions.create(
+                    model="gpt-4o",
+                    messages=new_messages
+                )
+                final_content = final_response.choices[0].message.content or "No response generated"
 
             except Exception as e:
-                final_content = f"Error during web search: {str(e)}\n\n{message.content or ''}"
+                final_content = f"Error during function call: {str(e)}\n\n{message.content or ''}"
 
         return {
             "answer": final_content,
@@ -168,47 +205,48 @@ def send_openai_request(prompt: str, context: Dict[str, Any]) -> Dict[str, Any]:
         }
 
     except Exception as e:
-        print(f"Error in send_openai_request: {str(e)}")
+        print(f"Error in get_ai_insights: {str(e)}")
         return {
             "answer": f"An error occurred while processing your request: {str(e)}",
             "confidence": 0,
             "sources": []
         }
 
-# Helper functions (unchanged)
-def get_ai_insights(question: str, context: Dict[str, Any]) -> Dict[str, Any]:
-    """Get AI insights with proper data context handling."""
-    try:
-        if not context or not context.get('data'):
-            return send_openai_request(question, {'data': None})
-        
-        cleaned_data = clean_data_context(context['data'])
-        context_hash = json.dumps({'data': cleaned_data}, sort_keys=True)
-        return cached_openai_request(question, context_hash)
-    except Exception as e:
-        return {
-            "answer": f"Error analyzing data: {str(e)}",
-            "confidence": 0,
-            "sources": []
-        }
+def generate_visualization_config(args: Dict[str, Any], data: Dict[str, Any]) -> Dict[str, Any]:
+    """Generate ECharts configuration based on requested visualization"""
+    chart_type = args.get('chart_type')
+    title = args.get('title')
+    x_axis = args.get('x_axis')
+    y_axis = args.get('y_axis')
+    additional_options = args.get('additional_options', {})
 
-def clean_data_context(data: Dict[str, Any]) -> Dict[str, Any]:
-    """Clean and validate the data context."""
-    try:
-        if isinstance(data.get('column_stats'), dict) and any('```csv' in key for key in data['column_stats']):
-            return {
-                'column_stats': {k.replace('```csv', ''): v for k, v in data['column_stats'].items()},
-                'columns': [col.replace('```csv', '') for col in data.get('columns', [])],
-                'preview': [
-                    {k.replace('```csv', ''): v for k, v in row.items()}
-                    for row in data.get('preview', [])
-                ],
-                'summary': data.get('summary', {})
-            }
-        return data
-    except Exception as e:
-        print(f"Error cleaning data context: {str(e)}")
-        return data
+    # Base configuration
+    config = {
+        'title': {'text': title},
+        'tooltip': {'trigger': 'axis'},
+        'grid': {'left': '3%', 'right': '4%', 'bottom': '3%', 'containLabel': True}
+    }
+
+    # Add chart-specific configuration
+    if chart_type == 'bar':
+        config.update(generate_bar_chart_config(data, x_axis, y_axis))
+    elif chart_type == 'line':
+        config.update(generate_line_chart_config(data, x_axis, y_axis))
+    elif chart_type == 'scatter':
+        config.update(generate_scatter_chart_config(data, x_axis, y_axis))
+    elif chart_type == 'pie':
+        config.update(generate_pie_chart_config(data, x_axis, y_axis))
+    elif chart_type == 'boxplot':
+        config.update(generate_boxplot_config(data, x_axis))
+    elif chart_type == 'heatmap':
+        config.update(generate_heatmap_config(data))
+
+    # Apply any additional options
+    config.update(additional_options)
+
+    return config
+
+# Add helper functions for each chart type...
 
 def format_data_context(data: Optional[Dict[str, Any]]) -> Optional[str]:
     """Format the data context for the AI prompt."""
@@ -236,63 +274,73 @@ def format_data_context(data: Optional[Dict[str, Any]]) -> Optional[str]:
         print(f"Error formatting data context: {str(e)}")
         return str(data)
 
-@lru_cache(maxsize=100)
-def cached_openai_request(prompt: str, context_hash: str) -> Dict[str, Any]:
-    """Cache OpenAI requests to avoid duplicate processing."""
-    try:
-        context = json.loads(context_hash)
-        return send_openai_request(prompt, context)
-    except Exception as e:
-        print(f"Error in cached_openai_request: {str(e)}")
-        return {
-            "answer": "I encountered an error while processing your request. Please try again later.",
-            "confidence": 0,
-            "sources": []
-        }
+def get_visualization_configs(data: Dict[str, Any]) -> Dict[str, Any]:
+    """Get visualization configurations using GPT-4 with structured output."""
+    logger.debug("Starting visualization configuration generation")
+    
+    if not openai_client:
+        logger.error("OpenAI client not initialized")
+        raise APIKeyError("OpenAI client is not properly initialized")
 
-def generate_visualizations(data: Dict[str, Any]) -> Dict[str, Any]:
-    """Generate dynamic visualizations using GPT-4."""
     try:
-        cleaned_data = clean_data_context(data)
-        data_context = format_data_context(cleaned_data)
-
-        system_message: ChatCompletionSystemMessageParam = {
+        logger.debug("Formatting data context")
+        data_context = format_data_context(data)
+        logger.debug(f"Data context formatted: {data_context[:200]}...")
+        
+        system_message = {
             "role": "system",
-            "content": """You are a data visualization expert. You can create visualizations using ECharts and Mermaid.js.
-            Analyze the data and choose the most appropriate visualization types including charts, graphs, and diagrams."""
+            "content": """You are a data visualization expert specializing in ECharts.
+            Analyze the provided data and create optimal visualizations that best represent the patterns and insights.
+            Use dark theme colors and ensure visualizations are clear and informative.
+            
+            IMPORTANT: Return ONLY a raw JSON object with a 'visualizations' key containing an array of ECharts configurations.
+            DO NOT include markdown code blocks or any other formatting.
+            DO NOT include explanations or any text outside the JSON object."""
         }
 
-        user_message: ChatCompletionUserMessageParam = {
+        user_message = {
             "role": "user",
-            "content": f"""Analyze this dataset and identify 4 key insights that would benefit from visualization. 
-            Create a mixed dashboard using appropriate visualization types (ECharts and Mermaid.js) for each insight. 
-            Consider using:
-            - ECharts for statistical visualizations (charts, plots)
-            - Mermaid.js for relationship diagrams, flows, and sequences
-            Generate a single, self-contained HTML file that includes all necessary visualization code.
-            Include proper titles, legends, and explanatory text.
-
-            Dataset Information:
-            {data_context}
-            """
+            "content": f"Create visualizations for this data:\n{data_context}"
         }
 
-        messages: List[ChatCompletionMessageParam] = [system_message, user_message]
+        logger.debug("Sending request to OpenAI")
+        response = openai_client.chat.completions.create(
+            model="gpt-4o",
+            messages=[system_message, user_message]
+        )
+        logger.debug("Received response from OpenAI")
 
         try:
-            response = openai_client.chat.completions.create(
-                model="gpt-4",
-                messages=messages
-            )
-        except Exception as e:
-            raise AIModelError(f"Error generating visualizations: {str(e)}")
+            content = response.choices[0].message.content
+            # Remove any markdown code blocks if present
+            if content.startswith('```'):
+                content = content.split('```')[1]
+                if content.startswith('json'):
+                    content = content[4:]
+            content = content.strip()
+            
+            logger.debug(f"Cleaned content for parsing: {content[:200]}...")
+            result = json.loads(content)
+            
+            if not isinstance(result.get('visualizations'), list):
+                logger.error("Invalid visualization format - not a list")
+                raise ValueError("Invalid visualization format")
+            
+            logger.debug(f"Successfully parsed {len(result['visualizations'])} visualizations")
+            return {
+                "success": True,
+                "visualizations": result['visualizations']
+            }
+        except json.JSONDecodeError as e:
+            logger.error(f"JSON decode error: {str(e)}")
+            logger.error(f"Raw content: {content}")
+            return {
+                "success": False,
+                "error": f"Invalid visualization format: {str(e)}"
+            }
 
-        visualization_code = response.choices[0].message.content
-        return {
-            "success": True,
-            "visualization_code": visualization_code or "Error: No visualization code generated"
-        }
     except Exception as e:
+        logger.exception("Error generating visualizations")
         return {
             "success": False,
             "error": str(e)

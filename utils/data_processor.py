@@ -5,6 +5,9 @@ from typing import Dict, Any
 def process_data(df: pd.DataFrame) -> Dict[str, Any]:
     """Process uploaded data and generate statistics."""
     
+    # Clean column names
+    df.columns = df.columns.str.strip()
+    
     numeric_columns = df.select_dtypes(include=[np.number]).columns
     categorical_columns = df.select_dtypes(include=['object']).columns
     
