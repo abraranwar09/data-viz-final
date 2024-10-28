@@ -4,7 +4,7 @@ from werkzeug.utils import secure_filename
 import pandas as pd
 import json
 from utils.data_processor import process_data, chunk_process_data
-from utils.ai_helper import get_ai_insights
+from utils.ai_helper import get_ai_insights, generate_visualizations
 from utils.db_models import db, SharedAnalysis, Comment
 import io
 
@@ -145,6 +145,19 @@ def upload_file():
             
     except Exception as e:
         return jsonify({'error': f'Error processing file: {str(e)}'}), 500
+
+@app.route('/visualize', methods=['POST'])
+def visualize_data():
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': 'No data received'}), 400
+
+        # Generate visualizations using GPT-4
+        result = generate_visualizations(data)
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({'error': f'Error generating visualizations: {str(e)}'}), 500
 
 @app.route('/share', methods=['POST'])
 def share_analysis():
