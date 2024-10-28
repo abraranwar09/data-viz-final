@@ -4,6 +4,12 @@ document.addEventListener('DOMContentLoaded', () => {
     initializeFileHandlers();
     initializeAIAssistant();
     initializeSharing();
+    // Initialize charts after DOM is loaded and state is initialized
+    if (window.appState) {
+        initializeCharts();
+    } else {
+        console.error('Failed to initialize app state');
+    }
 });
 
 // Global state management with error handling
