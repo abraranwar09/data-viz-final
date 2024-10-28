@@ -4,6 +4,7 @@ function initializeFileHandlers() {
     const progressBar = document.querySelector('.progress-bar');
     const progressDiv = document.getElementById('uploadProgress');
     const errorAlert = document.getElementById('errorAlert');
+    const shareButton = document.getElementById('shareAnalysis');
 
     // Drag and drop handlers
     dropZone.addEventListener('dragover', (e) => {
@@ -41,11 +42,13 @@ async function handleFile(file) {
     const progressBar = document.querySelector('.progress-bar');
     const progressDiv = document.getElementById('uploadProgress');
     const errorAlert = document.getElementById('errorAlert');
+    const shareButton = document.getElementById('shareAnalysis');
 
     // Show progress bar
     progressDiv.classList.remove('d-none');
     progressBar.style.width = '0%';
     errorAlert.classList.add('d-none');
+    shareButton.disabled = true;
 
     const formData = new FormData();
     formData.append('file', file);
@@ -73,12 +76,16 @@ async function handleFile(file) {
         updatePreviewTable(data.preview);
         updateVisualizations(data);
 
+        // Enable share button
+        shareButton.disabled = false;
+
         // Hide progress bar
         progressDiv.classList.add('d-none');
     } catch (error) {
         console.error('Error:', error);
         showError(error.message);
         progressDiv.classList.add('d-none');
+        shareButton.disabled = true;
     }
 }
 
