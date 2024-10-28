@@ -15,3 +15,11 @@ class SharedAnalysis(db.Model):
     data = db.Column(db.JSON, nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     views = db.Column(db.Integer, default=0)
+    comments = db.relationship('Comment', backref='analysis', lazy=True)
+
+class Comment(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    content = db.Column(db.Text, nullable=False)
+    author_name = db.Column(db.String(50), nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    analysis_id = db.Column(db.Integer, db.ForeignKey('shared_analysis.id'), nullable=False)

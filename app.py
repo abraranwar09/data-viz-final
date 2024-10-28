@@ -5,7 +5,7 @@ import pandas as pd
 import json
 from utils.data_processor import process_data, chunk_process_data
 from utils.ai_helper import get_ai_insights
-from utils.db_models import db, SharedAnalysis
+from utils.db_models import db, SharedAnalysis, Comment
 import io
 
 app = Flask(__name__)
@@ -29,6 +29,52 @@ def allowed_file(filename):
 @app.route('/')
 def index():
     return render_template('index.html')
+
+@app.route('/shared')
+def list_shared_analyses():
+    analyses = SharedAnalysis.query.order_by(SharedAnalysis.created_at.desc()).all()
+    return render_template('shared_list.html', analyses=analyses)
+
+@app.route('/analysis/<share_id>')
+def view_analysis(share_id):
+    shared = SharedAnalysis.query.filter_by(share_id=share_id).first_or_404()
+    shared.views += 1
+    db.session.commit()
+    return render_template('shared_analysis.html', analysis=shared)
+
+@app.route('/analysis/<share_id>/comments', methods=['GET', 'POST'])
+def handle_comments(share_id):
+    analysis = SharedAnalysis.query.filter_by(share_id=share_id).first_or_404()
+    
+    if request.method == 'POST':
+        data = request.get_json()
+        if not data or not data.get('content') or not data.get('author_name'):
+            return jsonify({'error': 'Missing required fields'}), 400
+            
+        comment = Comment(
+            content=data['content'],
+            author_name=data['author_name'],
+            analysis_id=analysis.id
+        )
+        db.session.add(comment)
+        db.session.commit()
+        
+        return jsonify({
+            'id': comment.id,
+            'content': comment.content,
+            'author_name': comment.author_name,
+            'created_at': comment.created_at.strftime('%Y-%m-%d %H:%M UTC')
+        })
+    
+    comments = Comment.query.filter_by(analysis_id=analysis.id)\
+                           .order_by(Comment.created_at.desc())\
+                           .all()
+    return jsonify([{
+        'id': c.id,
+        'content': c.content,
+        'author_name': c.author_name,
+        'created_at': c.created_at.strftime('%Y-%m-%d %H:%M UTC')
+    } for c in comments])
 
 @app.route('/upload', methods=['POST'])
 def upload_file():
@@ -100,24 +146,6 @@ def upload_file():
     except Exception as e:
         return jsonify({'error': f'Error processing file: {str(e)}'}), 500
 
-@app.route('/ai/analyze', methods=['POST'])
-def analyze_data():
-    try:
-        data = request.get_json()
-        if not data:
-            return jsonify({'error': 'No JSON data received'}), 400
-            
-        question = data.get('question')
-        context = data.get('context')
-        
-        if not question or not context:
-            return jsonify({'error': 'Missing required parameters'}), 400
-        
-        response = get_ai_insights(question, context)
-        return jsonify({'response': response})
-    except Exception as e:
-        return jsonify({'error': f'Error processing request: {str(e)}'}), 500
-
 @app.route('/share', methods=['POST'])
 def share_analysis():
     try:
@@ -145,12 +173,23 @@ def share_analysis():
         db.session.rollback()
         return jsonify({'error': f'Error sharing analysis: {str(e)}'}), 500
 
-@app.route('/analysis/<share_id>')
-def view_analysis(share_id):
-    shared = SharedAnalysis.query.filter_by(share_id=share_id).first_or_404()
-    shared.views += 1
-    db.session.commit()
-    return render_template('shared_analysis.html', analysis=shared)
+@app.route('/ai/analyze', methods=['POST'])
+def analyze_data():
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': 'No JSON data received'}), 400
+            
+        question = data.get('question')
+        context = data.get('context')
+        
+        if not question or not context:
+            return jsonify({'error': 'Missing required parameters'}), 400
+        
+        response = get_ai_insights(question, context)
+        return jsonify({'response': response})
+    except Exception as e:
+        return jsonify({'error': f'Error processing request: {str(e)}'}), 500
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True)
