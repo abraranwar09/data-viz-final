@@ -1,9 +1,31 @@
+let initializationAttempts = 0;
+const MAX_INITIALIZATION_ATTEMPTS = 3;
+
 function initializeCharts() {
     try {
         if (!window.appState) {
             throw new Error('Application state not initialized');
         }
 
+        // Validate chart containers
+        const containers = ['chart1', 'chart2', 'chart3', 'chart4'];
+        const missingContainers = containers.filter(id => !document.getElementById(id));
+        
+        if (missingContainers.length > 0) {
+            throw new Error(`Missing chart containers: ${missingContainers.join(', ')}`);
+        }
+
+        // Initialize chart containers with retry logic
+        initializeChartContainers();
+
+    } catch (error) {
+        console.error('Failed to initialize charts:', error);
+        handleChartInitializationError(error);
+    }
+}
+
+function initializeChartContainers() {
+    try {
         // Initialize chart containers
         window.appState.charts = {
             histogram: echarts.init(document.getElementById('chart1')),
@@ -13,29 +35,41 @@ function initializeCharts() {
         };
 
         // Handle window resize
-        window.addEventListener('resize', () => {
+        window.addEventListener('resize', debounce(() => {
             Object.values(window.appState.charts).forEach(chart => {
                 if (chart && typeof chart.resize === 'function') {
-                    chart.resize();
+                    try {
+                        chart.resize();
+                    } catch (error) {
+                        console.warn('Error resizing chart:', error);
+                    }
                 }
             });
-        });
+        }, 250));
 
         window.appState.initialized = true;
+        initializationAttempts = 0;
+
     } catch (error) {
-        console.error('Failed to initialize charts:', error);
-        showError('Failed to initialize visualization components');
+        handleChartInitializationError(error);
+    }
+}
+
+function handleChartInitializationError(error) {
+    initializationAttempts++;
+    
+    if (initializationAttempts < MAX_INITIALIZATION_ATTEMPTS) {
+        console.warn(`Chart initialization attempt ${initializationAttempts} failed, retrying...`);
+        setTimeout(initializeCharts, 1000); // Retry after 1 second
+    } else {
+        console.error('Failed to initialize charts after multiple attempts:', error);
+        showError('Failed to initialize visualization components. Please refresh the page.');
     }
 }
 
 function updateVisualizations(data) {
     if (!window.appState || !window.appState.initialized) {
         console.error('Charts not initialized');
-        return;
-    }
-
-    if (!data || !data.column_stats) {
-        console.error('Invalid data format for visualizations');
         return;
     }
 
@@ -54,7 +88,7 @@ function updateVisualizations(data) {
 }
 
 function updateHistogram(data) {
-    if (!data || !data.values || !data.values.length) {
+    if (!data || !data.values) {
         console.warn('Invalid histogram data');
         return;
     }
@@ -82,7 +116,7 @@ function updateHistogram(data) {
 }
 
 function updateScatterPlot(data) {
-    if (!data || !data.x || !data.y || !data.x.length || !data.y.length) {
+    if (!data || !data.x || !data.y) {
         console.warn('Invalid scatter plot data');
         return;
     }
@@ -145,7 +179,7 @@ function updateBoxplot(data) {
 }
 
 function updateHeatmap(data) {
-    if (!data || !Array.isArray(data) || !data.length) {
+    if (!data || !data.columns || !data.values) {
         console.warn('Invalid heatmap data');
         return;
     }
@@ -155,7 +189,7 @@ function updateHeatmap(data) {
         tooltip: {
             position: 'top',
             formatter: function(params) {
-                return `${params.value[2]}`;
+                return `Correlation: ${params.value[2].toFixed(2)}`;
             }
         },
         animation: false,
@@ -204,6 +238,19 @@ function updateHeatmap(data) {
     } catch (error) {
         console.error('Error updating heatmap:', error);
     }
+}
+
+// Utility function to debounce resize events
+function debounce(func, wait) {
+    let timeout;
+    return function executedFunction(...args) {
+        const later = () => {
+            clearTimeout(timeout);
+            func(...args);
+        };
+        clearTimeout(timeout);
+        timeout = setTimeout(later, wait);
+    };
 }
 
 function showError(message) {
