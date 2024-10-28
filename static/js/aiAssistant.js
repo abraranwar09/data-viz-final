@@ -8,11 +8,27 @@ marked.setOptions({
 });
 
 function initializeAIAssistant() {
-    const aiContainer = document.querySelector('.ai-container');
-    if (!aiContainer) {
-        console.error('AI container not found');
-        return;
+    // Wait for DOM to be fully loaded
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', setupAIAssistant);
+    } else {
+        setupAIAssistant();
     }
+}
+
+function setupAIAssistant() {
+    // First find or create the AI container
+    let aiContainer = document.querySelector('.ai-container');
+    if (!aiContainer) {
+        console.log('Creating new AI container');
+        aiContainer = document.createElement('div');
+        aiContainer.className = 'ai-container';
+        // Append to a known parent element - adjust this selector as needed
+        const mainContent = document.querySelector('#mainContent') || document.body;
+        mainContent.appendChild(aiContainer);
+    }
+
+    console.log('Setting up AI assistant interface');
 
     // Create chat container with loading indicator
     aiContainer.innerHTML = `
@@ -29,11 +45,11 @@ function initializeAIAssistant() {
                         </div>
                     </div>
                 </div>
-                <div class="loading-indicator d-none">
-                    <div class="loading-bar"></div>
-                    <div class="loading-bar"></div>
-                    <div class="loading-bar"></div>
-                </div>
+            </div>
+            <div class="loading-indicator d-none">
+                <div class="loading-bar"></div>
+                <div class="loading-bar"></div>
+                <div class="loading-bar"></div>
             </div>
             <div class="chat-input">
                 <div class="input-group">
@@ -48,47 +64,74 @@ function initializeAIAssistant() {
         </div>
     `;
 
-    const askButton = document.getElementById('askAI');
-    const questionInput = document.getElementById('aiQuestion');
+    // Verify elements exist after creation
+    const elements = {
+        askButton: document.getElementById('askAI'),
+        questionInput: document.getElementById('aiQuestion'),
+        chatMessages: document.getElementById('chatMessages'),
+        loadingIndicator: document.querySelector('.loading-indicator')
+    };
 
-    if (!askButton || !questionInput) {
-        console.error('Required AI assistant elements not found');
+    // Check if all required elements exist
+    const missingElements = Object.entries(elements)
+        .filter(([_, element]) => !element)
+        .map(([name]) => name);
+
+    if (missingElements.length > 0) {
+        console.error('Failed to initialize AI assistant elements:', missingElements);
         return;
     }
 
+    console.log('Setting up event listeners');
+
     // Add keyboard event listener for Enter key
-    questionInput.addEventListener('keydown', async (e) => {
+    elements.questionInput.addEventListener('keydown', async (e) => {
         if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault();
-            console.log('Enter key pressed, handling question');
-            const button = document.getElementById('askAI');
-            if (button) button.disabled = true;
-            await handleAIQuestion();
-            if (button) button.disabled = false;
+            console.log('Enter key pressed');
+            if (!elements.questionInput.disabled) {
+                setTimeout(async () => {
+                    await handleAIQuestion();
+                }, 0);
+            }
         }
     });
 
     // Add click event listener for ask button
-    askButton.addEventListener('click', async () => {
-        console.log('Ask button clicked, handling question');
-        askButton.disabled = true;
-        await handleAIQuestion();
-        askButton.disabled = false;
+    elements.askButton.addEventListener('click', async () => {
+        console.log('Ask button clicked');
+        if (!elements.askButton.disabled) {
+            setTimeout(async () => {
+                await handleAIQuestion();
+            }, 0);
+        }
     });
 
     // Add initial message if data is loaded
     if (window.appState?.currentData) {
         addMessage('system', 'Data loaded successfully. How can I help you analyze it?');
     }
+
+    console.log('AI assistant initialization complete');
 }
 
 async function handleAIQuestion() {
+    console.log('Handling AI question');
+    
+    // Get elements
     const questionInput = document.getElementById('aiQuestion');
     const chatMessages = document.getElementById('chatMessages');
     const loadingIndicator = document.querySelector('.loading-indicator');
+    const askButton = document.getElementById('askAI');
 
-    if (!questionInput || !chatMessages || !loadingIndicator) {
-        console.error('Required AI assistant elements not found');
+    // Verify all elements exist
+    if (!questionInput || !chatMessages || !loadingIndicator || !askButton) {
+        console.error('Missing required elements:', {
+            questionInput: !!questionInput,
+            chatMessages: !!chatMessages,
+            loadingIndicator: !!loadingIndicator,
+            askButton: !!askButton
+        });
         return;
     }
 
@@ -99,13 +142,15 @@ async function handleAIQuestion() {
     }
 
     try {
-        console.log('Processing question:', question);
-        
-        // Add user message
-        addMessage('user', question);
+        // Disable input and button while processing
+        questionInput.disabled = true;
+        askButton.disabled = true;
 
         // Show loading indicator
         loadingIndicator.classList.remove('d-none');
+
+        // Add user message
+        addMessage('user', question);
 
         // Check if data is loaded
         if (!window.appState?.currentData) {
@@ -113,33 +158,61 @@ async function handleAIQuestion() {
         }
 
         console.log('Sending request to server');
-        const response = await askAIQuestion(question);
-        console.log('Received response:', response);
+        const response = await fetch('/ai/analyze', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                question: question,
+                context: {
+                    data: window.appState.currentData
+                }
+            })
+        });
 
-        if (response && response.response) {
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.error || 'Failed to get AI response');
+        }
+
+        const result = await response.json();
+        console.log('Received response:', result);
+
+        if (result?.response?.answer) {
+            const answer = result.response.answer;
+            
             // Handle visualization in the response
-            const answer = response.response.answer;
-            addMessage('assistant', answer);
-
-            // Check if response contains visualization
-            if (answer.includes('```echarts') || answer.includes('visualization generated')) {
-                // Trigger visualization update
-                await updateVisualizations(window.appState.currentData);
+            if (answer.includes('```echarts')) {
+                const vizConfig = extractVisualizationConfig(answer);
+                if (vizConfig) {
+                    await updateVisualizations([vizConfig]);
+                }
+                
+                // Remove the raw echarts config from the display
+                const cleanAnswer = answer.replace(/```echarts[\s\S]*?```/g, 
+                    '*Visualization generated based on your request*');
+                addMessage('assistant', cleanAnswer);
+            } else {
+                addMessage('assistant', answer);
             }
+
+            // Clear input after successful response
+            questionInput.value = '';
         } else {
             throw new Error('Invalid response format');
         }
-
-        // Clear input after successful response
-        questionInput.value = '';
+        
     } catch (error) {
         console.error('AI Error:', error);
         addMessage('error', `Error: ${error.message}`);
     } finally {
+        // Re-enable input and button
+        questionInput.disabled = false;
+        askButton.disabled = false;
+        
         // Hide loading indicator
-        if (loadingIndicator) {
-            loadingIndicator.classList.add('d-none');
-        }
+        loadingIndicator.classList.add('d-none');
         scrollToBottom();
     }
 }
@@ -156,12 +229,16 @@ function addMessage(type, content) {
     const messageDiv = document.createElement('div');
     messageDiv.className = `message message-${type}`;
     
-    const renderedContent = type === 'user' ? content : marked.parse(content);
+    let icon = type === 'user' ? 'bi-person-circle' : 
+               type === 'error' ? 'bi-exclamation-triangle' : 
+               'bi-robot';
+    
+    let renderedContent = type === 'user' ? content : marked.parse(content);
     
     messageDiv.innerHTML = `
         <div class="d-flex align-items-start">
             <div class="me-2">
-                <i class="bi ${type === 'user' ? 'bi-person-circle' : type === 'error' ? 'bi-exclamation-triangle' : 'bi-robot'} fs-4"></i>
+                <i class="bi ${icon} fs-4"></i>
             </div>
             <div class="message-content flex-grow-1">
                 ${renderedContent}
@@ -180,36 +257,16 @@ function scrollToBottom() {
     }
 }
 
-async function askAIQuestion(question) {
-    console.log('Sending AI request:', question);
-    
-    try {
-        const context = {
-            data: window.appState?.currentData,
-            question: question
-        };
-
-        const response = await fetch('/ai/analyze', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                question: question,
-                context: context
-            })
-        });
-
-        if (!response.ok) {
-            const errorData = await response.json();
-            throw new Error(errorData.error || 'Failed to get AI response');
+// Add helper function to extract visualization config
+function extractVisualizationConfig(message) {
+    const matches = message.match(/```echarts\n([\s\S]*?)\n```/);
+    if (matches && matches[1]) {
+        try {
+            return JSON.parse(matches[1]);
+        } catch (e) {
+            console.error('Failed to parse visualization config:', e);
+            return null;
         }
-        
-        const result = await response.json();
-        console.log('AI response:', result);
-        return result;
-    } catch (error) {
-        console.error('AI request failed:', error);
-        throw new Error(`AI request failed: ${error.message}`);
     }
+    return null;
 }

@@ -78,125 +78,104 @@ def get_ai_insights(question: str, context: Dict[str, Any]) -> Dict[str, Any]:
     try:
         # Format the data context
         data_context = format_data_context(context.get('data'))
-        system_prompt = context.get('system_prompt')
         
-        # Prepare system message
-        system_message: ChatCompletionSystemMessageParam = {
-            "role": "system",
-            "content": system_prompt if system_prompt else (
-                "You are a data analysis assistant with access to the uploaded document data. "
-                "You can analyze the data and provide insights. You can use the web_search function "
-                "for additional information and create_visualization function to generate charts. "
-                "Format your responses using markdown."
-            )
-        }
+        # Enhanced system prompt for better tool usage
+        system_prompt = """You are a helpful data analysis assistant. You have access to:
+        1. The uploaded data for analysis
+        2. A web search tool to find relevant information
+        3. A visualization tool to create charts
 
-        # Prepare user message
-        user_message: ChatCompletionUserMessageParam = {
-            "role": "user",
-            "content": f"Context:\n{data_context}\n\nQuestion: {question}" if data_context else question
-        }
+        When answering:
+        - If you need external information, use the web_search tool
+        - If the question involves data patterns or trends, use create_visualization
+        - Always explain your insights clearly using markdown formatting
+        - Use bullet points and headers for better readability
+        - Include specific data points to support your analysis
+        """
 
-        messages: List[ChatCompletionMessageParam] = [system_message, user_message]
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": f"Context:\n{data_context}\n\nQuestion: {question}" if data_context else question}
+        ]
 
         # Make the API call with both tools
-        try:
-            chat_completion = openai_client.chat.completions.create(
-                model="gpt-4o",
-                messages=messages,
-                functions=[
-                    {
-                        "name": "web_search",
-                        "description": "Search the web for additional information or context",
-                        "parameters": {
-                            "type": "object",
-                            "properties": {
-                                "query": {
-                                    "type": "string",
-                                    "description": "The search query"
-                                }
-                            },
-                            "required": ["query"]
-                        }
-                    },
-                    {
-                        "name": "create_visualization",
-                        "description": "Create a data visualization using ECharts",
-                        "parameters": {
-                            "type": "object",
-                            "properties": {
-                                "chart_type": {
-                                    "type": "string",
-                                    "enum": ["bar", "line", "scatter", "pie", "boxplot", "heatmap"],
-                                    "description": "Type of chart to create"
-                                },
-                                "title": {
-                                    "type": "string",
-                                    "description": "Chart title"
-                                },
-                                "x_axis": {
-                                    "type": "string",
-                                    "description": "Column name for x-axis"
-                                },
-                                "y_axis": {
-                                    "type": "string",
-                                    "description": "Column name for y-axis"
-                                },
-                                "additional_options": {
-                                    "type": "object",
-                                    "description": "Additional ECharts configuration options"
-                                }
-                            },
-                            "required": ["chart_type", "title"]
-                        }
+        chat_completion = openai_client.chat.completions.create(
+            model="gpt-4",
+            messages=messages,
+            functions=[
+                {
+                    "name": "web_search",
+                    "description": "Search the web for additional information or context",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "query": {
+                                "type": "string",
+                                "description": "The search query"
+                            }
+                        },
+                        "required": ["query"]
                     }
-                ],
-                function_call="auto"
-            )
-        except Exception as e:
-            raise Exception(f"Error calling OpenAI API: {str(e)}")
+                },
+                {
+                    "name": "create_visualization",
+                    "description": "Create a data visualization using ECharts",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "chart_type": {
+                                "type": "string",
+                                "enum": ["bar", "line", "scatter", "pie", "boxplot", "heatmap"],
+                                "description": "Type of chart to create"
+                            },
+                            "title": {
+                                "type": "string",
+                                "description": "Chart title"
+                            },
+                            "x_axis": {
+                                "type": "string",
+                                "description": "Column name for x-axis"
+                            },
+                            "y_axis": {
+                                "type": "string",
+                                "description": "Column name for y-axis"
+                            }
+                        },
+                        "required": ["chart_type", "title"]
+                    }
+                }
+            ],
+            function_call="auto"
+        )
 
         message = chat_completion.choices[0].message
         final_content = message.content or ""
 
         # Handle function calls
         if message.function_call:
-            try:
-                function_args = json.loads(message.function_call.arguments)
+            function_name = message.function_call.name
+            function_args = json.loads(message.function_call.arguments)
+            
+            function_response = None
+            if function_name == "web_search":
+                search_results = web_search(function_args.get("query"))
+                function_response = search_results
                 
-                if message.function_call.name == "web_search":
-                    search_results = web_search(function_args.get("query"))
-                    function_response = search_results
-                elif message.function_call.name == "create_visualization":
-                    viz_config = generate_visualization_config(
-                        function_args,
-                        context.get('data', {})
-                    )
-                    function_response = json.dumps(viz_config)
+                # Get a new response incorporating the search results
+                messages.extend([
+                    {"role": "assistant", "content": message.content, "function_call": message.function_call},
+                    {"role": "function", "name": function_name, "content": function_response}
+                ])
                 
-                # Create a new message list including the function results
-                new_messages = messages + [
-                    ChatCompletionMessageParam(
-                        role="assistant",
-                        content=message.content,
-                        function_call=message.function_call
-                    ),
-                    ChatCompletionMessageParam(
-                        role="function",
-                        name=message.function_call.name,
-                        content=function_response
-                    )
-                ]
-
-                # Get final response incorporating function results
                 final_response = openai_client.chat.completions.create(
-                    model="gpt-4o",
-                    messages=new_messages
+                    model="gpt-4",
+                    messages=messages
                 )
-                final_content = final_response.choices[0].message.content or "No response generated"
+                final_content = final_response.choices[0].message.content
 
-            except Exception as e:
-                final_content = f"Error during function call: {str(e)}\n\n{message.content or ''}"
+            elif function_name == "create_visualization":
+                viz_config = generate_visualization_config(function_args, context.get('data', {}))
+                final_content = f"{message.content}\n\n```echarts\n{json.dumps(viz_config, indent=2)}\n```"
 
         return {
             "answer": final_content,
@@ -205,7 +184,7 @@ def get_ai_insights(question: str, context: Dict[str, Any]) -> Dict[str, Any]:
         }
 
     except Exception as e:
-        print(f"Error in get_ai_insights: {str(e)}")
+        logger.exception("Error in get_ai_insights")
         return {
             "answer": f"An error occurred while processing your request: {str(e)}",
             "confidence": 0,
