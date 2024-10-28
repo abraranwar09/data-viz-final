@@ -13,15 +13,31 @@
 </head>
 <body>
     <div class="container-fluid">
-        <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+        <nav class="navbar navbar-expand-lg navbar-dark bg-dark mb-4">
             <div class="container-fluid">
-                <a class="navbar-brand" href="#">Data Analysis Dashboard</a>
-                <div class="d-flex align-items-center">
-                    <button id="shareAnalysis" class="btn btn-outline-primary me-2" disabled>
-                        <i class="bi bi-share-fill"></i> Share Analysis
-                    </button>
-                    <div class="navbar-text">
-                        Supported formats: CSV, TSV, Excel (xlsx/xls), JSON
+                <a class="navbar-brand" href="/">
+                    <i class="bi bi-graph-up me-2"></i>Data Analysis Dashboard
+                </a>
+                <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                    <span class="navbar-toggler-icon"></span>
+                </button>
+                <div class="collapse navbar-collapse" id="navbarNav">
+                    <ul class="navbar-nav me-auto">
+                        <li class="nav-item">
+                            <a class="nav-link active" href="/">
+                                <i class="bi bi-house-door me-1"></i>Home
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="/shared">
+                                <i class="bi bi-share me-1"></i>Shared Analyses
+                            </a>
+                        </li>
+                    </ul>
+                    <div class="d-flex align-items-center">
+                        <button id="shareAnalysis" class="btn btn-outline-primary" disabled>
+                            <i class="bi bi-share-fill me-1"></i>Share Analysis
+                        </button>
                     </div>
                 </div>
             </div>
@@ -103,15 +119,21 @@
             <div class="col-12 mb-4">
                 <div class="card">
                     <div class="card-header">
-                        <h5 class="card-title">AI Assistant</h5>
+                        <h5 class="card-title">
+                            <i class="bi bi-robot me-2"></i>AI Assistant
+                        </h5>
                     </div>
                     <div class="card-body">
-                        <div class="input-group mb-3">
-                            <input type="text" class="form-control" id="aiQuestion" 
-                                   placeholder="Ask a question about your data...">
-                            <button class="btn btn-primary" type="button" id="askAI">Ask</button>
+                        <div class="ai-container">
+                            <div class="input-group mb-3">
+                                <input type="text" class="form-control" id="aiQuestion" 
+                                       placeholder="Ask a question about your data (press Enter to send)...">
+                                <button class="btn btn-primary" type="button" id="askAI">
+                                    <i class="bi bi-send me-1"></i>Ask
+                                </button>
+                            </div>
+                            <div id="aiResponse" class="mt-3"></div>
                         </div>
-                        <div id="aiResponse" class="mt-3"></div>
                     </div>
                 </div>
             </div>

@@ -11,11 +11,32 @@
 </head>
 <body>
     <div class="container-fluid">
-        <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+        <nav class="navbar navbar-expand-lg navbar-dark bg-dark mb-4">
             <div class="container-fluid">
-                <a class="navbar-brand" href="/">Data Analysis Dashboard</a>
-                <div class="navbar-text">
-                    Shared Analysis View
+                <a class="navbar-brand" href="/">
+                    <i class="bi bi-graph-up me-2"></i>Data Analysis Dashboard
+                </a>
+                <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                    <span class="navbar-toggler-icon"></span>
+                </button>
+                <div class="collapse navbar-collapse" id="navbarNav">
+                    <ul class="navbar-nav me-auto">
+                        <li class="nav-item">
+                            <a class="nav-link" href="/">
+                                <i class="bi bi-house-door me-1"></i>Home
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="/shared">
+                                <i class="bi bi-share me-1"></i>Shared Analyses
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link active" href="#">
+                                <i class="bi bi-file-text me-1"></i>Current Analysis
+                            </a>
+                        </li>
+                    </ul>
                 </div>
             </div>
         </nav>
@@ -29,8 +50,8 @@
                         <p class="card-text">{{ analysis.description }}</p>
                         {% endif %}
                         <div class="text-muted small">
-                            Shared on {{ analysis.created_at.strftime('%Y-%m-%d %H:%M UTC') }}
-                            • {{ analysis.views }} views
+                            <i class="bi bi-clock me-1"></i>Shared on {{ analysis.created_at.strftime('%Y-%m-%d %H:%M UTC') }}
+                            • <i class="bi bi-eye me-1"></i>{{ analysis.views }} views
                         </div>
                     </div>
                 </div>
