@@ -1,26 +1,50 @@
 // Main application initialization
-document.addEventListener('DOMContentLoaded', () => {
-    initializeAppState();
-    initializeFileHandlers();
-    initializeAIAssistant();
-    initializeSharing();
-    // Initialize charts after DOM is loaded and state is initialized
-    if (window.appState) {
-        initializeCharts();
-    } else {
-        console.error('Failed to initialize app state');
+document.addEventListener('DOMContentLoaded', async () => {
+    try {
+        await initializeAppState();
+        initializeFileHandlers();
+        initializeAIAssistant();
+        initializeSharing();
+        
+        // Initialize charts after everything else is loaded
+        await initializeCharts();
+    } catch (error) {
+        console.error('Error during application initialization:', error);
+        showError('Failed to initialize application. Please refresh the page.');
     }
 });
 
-// Global state management with error handling
-function initializeAppState() {
-    if (typeof window.appState === 'undefined') {
+// Global state management with error handling and retry logic
+async function initializeAppState(retryCount = 0) {
+    try {
         window.appState = {
             currentData: null,
             charts: {},
             statistics: null,
-            initialized: false
+            initialized: false,
+            retryAttempts: 0
         };
+
+        // Initialize charts after state is ready
+        await new Promise(resolve => {
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', resolve);
+            } else {
+                resolve();
+            }
+        });
+
+        await initializeCharts();
+        window.appState.initialized = true;
+
+    } catch (error) {
+        console.error('Failed to initialize app state:', error);
+        if (retryCount < 3) {
+            console.log(`Retrying initialization (attempt ${retryCount + 1})...`);
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            return initializeAppState(retryCount + 1);
+        }
+        throw error;
     }
 }
 
@@ -35,7 +59,13 @@ const eventBus = {
     },
     publish(event, data) {
         if (this.subscribers[event]) {
-            this.subscribers[event].forEach(callback => callback(data));
+            this.subscribers[event].forEach(callback => {
+                try {
+                    callback(data);
+                } catch (error) {
+                    console.error(`Error in event subscriber for ${event}:`, error);
+                }
+            });
         }
     }
 };
@@ -45,17 +75,19 @@ function initializeSharing() {
     if (!shareButton) return;
 
     shareButton.addEventListener('click', async () => {
-        if (!window.appState || !window.appState.currentData) {
-            showError('Please upload and analyze data before sharing.');
-            return;
-        }
-
-        const title = prompt('Enter a title for this analysis:', 'My Data Analysis');
-        if (!title) return;
-
-        const description = prompt('Enter a description (optional):', '');
-
         try {
+            if (!window.appState || !window.appState.currentData) {
+                showError('Please upload and analyze data before sharing.');
+                return;
+            }
+
+            const title = prompt('Enter a title for this analysis:', 'My Data Analysis');
+            if (!title) return;
+
+            const description = prompt('Enter a description (optional):', '');
+            const isPublic = confirm('Make this analysis public? Click Cancel for private sharing.');
+            const password = !isPublic ? prompt('Enter a password for private sharing (optional):') : null;
+
             const response = await fetch('/share', {
                 method: 'POST',
                 headers: {
@@ -64,7 +96,9 @@ function initializeSharing() {
                 body: JSON.stringify({
                     title,
                     description,
-                    data: window.appState.currentData
+                    data: window.appState.currentData,
+                    is_public: isPublic,
+                    password: password
                 })
             });
 
@@ -76,6 +110,7 @@ function initializeSharing() {
             const result = await response.json();
             showShareSuccess(result.url);
         } catch (error) {
+            console.error('Error sharing analysis:', error);
             showError(error.message);
         }
     });
@@ -94,10 +129,23 @@ function showShareSuccess(url) {
 
     // Add click-to-copy functionality
     const input = alertDiv.querySelector('input');
-    input.addEventListener('click', () => {
-        input.select();
-        navigator.clipboard.writeText(input.value);
-        input.setSelectionRange(0, 99999);
+    input.addEventListener('click', async () => {
+        try {
+            input.select();
+            await navigator.clipboard.writeText(input.value);
+            input.setSelectionRange(0, 99999);
+            
+            const copyConfirm = document.createElement('div');
+            copyConfirm.className = 'alert alert-info position-fixed bottom-0 start-50 translate-middle-x mb-3';
+            copyConfirm.style.zIndex = '1051';
+            copyConfirm.textContent = 'Link copied to clipboard!';
+            document.body.appendChild(copyConfirm);
+            
+            setTimeout(() => copyConfirm.remove(), 2000);
+        } catch (error) {
+            console.error('Error copying to clipboard:', error);
+            showError('Failed to copy link to clipboard');
+        }
     });
 
     // Auto-remove after 10 seconds
@@ -106,7 +154,6 @@ function showShareSuccess(url) {
     }, 10000);
 }
 
-// Error handling utility
 function showError(message) {
     const errorAlert = document.getElementById('errorAlert');
     if (errorAlert) {

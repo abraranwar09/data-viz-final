@@ -9,6 +9,8 @@ from utils.db_models import db, SharedAnalysis, Comment, Collaborator
 from datetime import datetime, timedelta
 import io
 import secrets
+from sqlalchemy import text
+import sys
 
 app = Flask(__name__)
 app.secret_key = os.environ.get('FLASK_SECRET_KEY', 'dev-secret-key')
@@ -16,9 +18,68 @@ app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024  # 50MB max file size
 app.config['SQLALCHEMY_DATABASE_URI'] = os.environ['DATABASE_URL']
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
+# Initialize database
 db.init_app(app)
-with app.app_context():
-    db.create_all()
+
+def init_database():
+    """Initialize database with schema version tracking."""
+    try:
+        with app.app_context():
+            # Create schema_version table if it doesn't exist
+            db.session.execute(text("""
+                CREATE TABLE IF NOT EXISTS schema_version (
+                    version INTEGER PRIMARY KEY,
+                    applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """))
+            
+            # Check current schema version
+            result = db.session.execute(text("SELECT version FROM schema_version ORDER BY version DESC LIMIT 1"))
+            current_version = result.scalar()
+            target_version = 1  # Increment this when making schema changes
+            
+            if not current_version or current_version < target_version:
+                # Apply migrations
+                try:
+                    db.create_all()
+                    
+                    # Add missing columns if needed
+                    for column in ['last_modified', 'is_public', 'password']:
+                        try:
+                            db.session.execute(text(f"""
+                                ALTER TABLE shared_analysis
+                                ADD COLUMN IF NOT EXISTS {column} {get_column_type(column)}
+                            """))
+                        except Exception as e:
+                            print(f"Error adding column {column}: {str(e)}")
+                    
+                    # Update schema version
+                    db.session.execute(
+                        text("INSERT INTO schema_version (version) VALUES (:version)"),
+                        {"version": target_version}
+                    )
+                    db.session.commit()
+                    
+                    print(f"Database schema updated to version {target_version}")
+                except Exception as e:
+                    print(f"Error updating database schema: {str(e)}")
+                    db.session.rollback()
+                    raise
+    except Exception as e:
+        print(f"Database initialization error: {str(e)}")
+        sys.exit(1)
+
+def get_column_type(column_name):
+    """Get SQL type for a column."""
+    column_types = {
+        'last_modified': 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP',
+        'is_public': 'BOOLEAN DEFAULT TRUE',
+        'password': 'VARCHAR(100)'
+    }
+    return column_types.get(column_name, 'VARCHAR(100)')
+
+# Initialize database with schema version tracking
+init_database()
 
 ALLOWED_EXTENSIONS = {'csv', 'xlsx', 'xls', 'json', 'tsv', 'txt'}
 CHUNK_SIZE = 10000  # Number of rows to process at a time
@@ -50,10 +111,8 @@ def view_analysis(share_id):
         if 'password' not in session.get(f'access_{share_id}', {}):
             return redirect(url_for('analysis_auth', share_id=share_id))
     
-    # Update view count and track viewer
     shared.views += 1
     
-    # Record collaborator
     collaborator = Collaborator.query.filter_by(
         analysis_id=shared.id,
         session_id=session['user_id']
@@ -93,7 +152,6 @@ def analysis_auth(share_id):
 def get_collaborators(share_id):
     shared = SharedAnalysis.query.filter_by(share_id=share_id).first_or_404()
     
-    # Clean up inactive collaborators
     timeout = datetime.utcnow() - timedelta(minutes=5)
     Collaborator.query.filter(
         Collaborator.analysis_id == shared.id,
@@ -172,7 +230,6 @@ def share_analysis():
         )
         db.session.add(shared)
         
-        # Add creator as owner collaborator
         owner = Collaborator(
             analysis_id=shared.id,
             session_id=session['user_id'],
