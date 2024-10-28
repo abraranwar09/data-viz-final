@@ -1,17 +1,22 @@
 // Main application initialization
 document.addEventListener('DOMContentLoaded', () => {
+    initializeAppState();
     initializeFileHandlers();
     initializeAIAssistant();
-    initializeCharts();
     initializeSharing();
 });
 
-// Global state management
-const appState = {
-    currentData: null,
-    charts: {},
-    statistics: null
-};
+// Global state management with error handling
+function initializeAppState() {
+    if (typeof window.appState === 'undefined') {
+        window.appState = {
+            currentData: null,
+            charts: {},
+            statistics: null,
+            initialized: false
+        };
+    }
+}
 
 // Event bus for component communication
 const eventBus = {
@@ -34,7 +39,7 @@ function initializeSharing() {
     if (!shareButton) return;
 
     shareButton.addEventListener('click', async () => {
-        if (!appState.currentData) {
+        if (!window.appState || !window.appState.currentData) {
             showError('Please upload and analyze data before sharing.');
             return;
         }
@@ -53,7 +58,7 @@ function initializeSharing() {
                 body: JSON.stringify({
                     title,
                     description,
-                    data: appState.currentData
+                    data: window.appState.currentData
                 })
             });
 
@@ -93,4 +98,20 @@ function showShareSuccess(url) {
     setTimeout(() => {
         alertDiv.remove();
     }, 10000);
+}
+
+// Error handling utility
+function showError(message) {
+    const errorAlert = document.getElementById('errorAlert');
+    if (errorAlert) {
+        errorAlert.innerHTML = `
+            <div class="d-flex align-items-center">
+                <i class="bi bi-exclamation-triangle-fill me-2"></i>
+                <span>${message}</span>
+            </div>
+        `;
+        errorAlert.classList.remove('d-none');
+    } else {
+        console.error('Error:', message);
+    }
 }
