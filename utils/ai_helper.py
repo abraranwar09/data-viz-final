@@ -10,6 +10,7 @@ from openai.types.chat import (
 import json
 import requests
 import logging
+import math
 
 # Set up logging
 logging.basicConfig(level=logging.DEBUG)
@@ -85,40 +86,53 @@ def get_ai_insights(question: str, context: Dict[str, Any]) -> Dict[str, Any]:
         data = context.get('data', {})
         is_initial_analysis = context.get('type') == 'initial_analysis'
 
-        # Enhanced system prompt for better visualization guidance
-        system_prompt = """You are an expert data analyst and visualization specialist. Your primary goal is to create insightful visualizations from data.
+        # Enhanced system prompt for better data handling
+        system_prompt = """You are an expert data analyst and visualization specialist with advanced data cleaning capabilities.
 
-        REQUIREMENTS:
-        1. For initial analysis:
-           - Create at least 3 different visualizations
-           - Show different aspects of the data
-           - Provide clear explanations for each visualization
-           - Summarize key findings
+        DATA HANDLING CAPABILITIES:
+        1. Handle various data formats and quality issues:
+           - Missing values or incomplete data
+           - Inconsistent formatting
+           - Headers-only data
+           - Mixed data types
+           - Non-standard formats
 
-        2. For user questions:
-           - Always create at least one visualization
-           - Choose the most appropriate chart type
-           - Explain your visualization choices
+        2. Data Quality Assessment:
+           - Identify data completeness
+           - Detect formatting issues
+           - Suggest data improvements
+           - Handle NaN or null values
+           - Validate data consistency
 
-        VISUALIZATION GUIDELINES:
-        - Numerical relationships: Use scatter plots or line charts
-        - Distributions: Use histograms or box plots
-        - Categories: Use bar charts or pie charts
-        - Time series: Use line charts with time on x-axis
-        - Correlations: Use heatmaps or scatter matrices
-        - Complex relationships: Use sunburst or treemap charts
+        3. Data Enhancement:
+           - Suggest data completion strategies
+           - Recommend data cleaning steps
+           - Provide data quality feedback
+           - Explain data limitations
 
-        ALWAYS:
-        - Analyze the full data structure
-        - Create multiple visualizations for comprehensive analysis
-        - Explain patterns and insights clearly
-        - Choose appropriate chart types based on data characteristics
-        - Provide context for each visualization
+        VISUALIZATION REQUIREMENTS:
+        1. Always create visualizations when possible
+        2. Adapt to data limitations
+        3. Explain any data quality issues
+        4. Suggest improvements
+
+        COMMUNICATION:
+        1. Clearly explain data quality issues
+        2. Provide context for limitations
+        3. Suggest data improvements
+        4. Explain visualization choices
 
         NEVER:
-        - Refuse to create a visualization
-        - Return analysis without visualizations
-        - Ignore any part of the data structure"""
+        - Refuse to analyze data
+        - Ignore data quality issues
+        - Skip explaining limitations
+        - Leave users without actionable insights"""
+
+        # Check for data quality issues
+        data_quality_issues = validate_data_quality(data)
+        if data_quality_issues:
+            # Add data quality context to the question
+            question = f"{question}\n\nData Quality Context: {data_quality_issues}"
 
         # Define available functions for structured output
         functions = [
@@ -262,36 +276,52 @@ def extract_visualization_suggestions(gpt_response: str, data: Dict[str, Any]) -
     return suggestions
 
 def generate_visualization_config(args: Dict[str, Any], data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-    """Generate enhanced ECharts configuration with validation"""
+    """Generate enhanced ECharts configuration with strict validation"""
     try:
         chart_type = args.get('chart_type')
         title = args.get('title')
         x_axis = args.get('x_axis')
         y_axis = args.get('y_axis')
         
-        # Validate required fields
+        # Strict validation of required fields
         if not all([chart_type, title, x_axis, y_axis]):
-            logger.error(f"Missing required fields: {args}")
+            logger.error(f"Missing required fields in visualization config: {args}")
             return None
         
-        # Extract data for visualization
+        # Extract and validate data
         preview_data = data.get('preview', [])
         if not preview_data:
-            logger.error("No preview data available")
+            logger.error("No data available for visualization")
             return None
 
-        # Validate data availability for the specified axes
-        valid_data_points = [
-            row for row in preview_data
-            if x_axis in row and y_axis in row 
-            and row[x_axis] is not None and row[y_axis] is not None
-        ]
+        # Extract valid data points based on chart type
+        valid_data = []
+        if chart_type in ['bar', 'line']:
+            valid_data = [
+                (str(row[x_axis]), float(row[y_axis]))
+                for row in preview_data
+                if x_axis in row and y_axis in row
+                and row[x_axis] is not None 
+                and row[y_axis] is not None
+                and not (isinstance(row[y_axis], float) and math.isnan(row[y_axis]))
+            ]
+        elif chart_type == 'scatter':
+            valid_data = [
+                [float(row[x_axis]), float(row[y_axis])]
+                for row in preview_data
+                if x_axis in row and y_axis in row
+                and row[x_axis] is not None 
+                and row[y_axis] is not None
+                and not (isinstance(row[x_axis], float) and math.isnan(row[x_axis]))
+                and not (isinstance(row[y_axis], float) and math.isnan(row[y_axis]))
+            ]
 
-        if not valid_data_points:
-            logger.error(f"No valid data points found for {x_axis} vs {y_axis}")
+        # If no valid data points, return None
+        if not valid_data:
+            logger.error(f"No valid data points found for {chart_type} chart with {x_axis} vs {y_axis}")
             return None
 
-        # Base theme configuration
+        # Create base config
         config = {
             'backgroundColor': 'transparent',
             'title': {
@@ -313,8 +343,7 @@ def generate_visualization_config(args: Dict[str, Any], data: Dict[str, Any]) ->
                 'containLabel': True
             },
             'xAxis': {
-                'type': 'category',
-                'data': [],
+                'type': 'category' if chart_type in ['bar', 'line'] else 'value',
                 'axisLabel': {'color': '#fff'},
                 'axisLine': {'lineStyle': {'color': '#fff'}}
             },
@@ -326,20 +355,13 @@ def generate_visualization_config(args: Dict[str, Any], data: Dict[str, Any]) ->
             'series': []
         }
 
-        # Process data based on chart type
-        if chart_type == 'bar':
-            # Extract unique x values and corresponding y values
-            x_values = []
-            y_values = []
-            for row in preview_data:
-                if x_axis in row and y_axis in row:
-                    x_values.append(str(row[x_axis]))
-                    y_values.append(float(row[y_axis]) if row[y_axis] is not None else 0)
-
-            config['xAxis']['data'] = x_values
-            config['series'].append({
-                'type': 'bar',
-                'data': y_values,
+        # Configure series based on chart type
+        if chart_type in ['bar', 'line']:
+            x_values, y_values = zip(*valid_data)
+            config['xAxis']['data'] = list(x_values)
+            series = {
+                'type': chart_type,
+                'data': list(y_values),
                 'itemStyle': {
                     'color': {
                         'type': 'linear',
@@ -350,81 +372,34 @@ def generate_visualization_config(args: Dict[str, Any], data: Dict[str, Any]) ->
                             {'offset': 1, 'color': '#188df0'}
                         ]
                     }
-                },
-                'emphasis': {
-                    'itemStyle': {
-                        'shadowBlur': 10,
-                        'shadowColor': 'rgba(0,0,0,0.5)'
-                    }
                 }
-            })
-
-        elif chart_type == 'line':
-            x_values = []
-            y_values = []
-            for row in preview_data:
-                if x_axis in row and y_axis in row:
-                    x_values.append(str(row[x_axis]))
-                    y_values.append(float(row[y_axis]) if row[y_axis] is not None else 0)
-
-            config['xAxis']['data'] = x_values
-            config['series'].append({
-                'type': 'line',
-                'data': y_values,
-                'smooth': True,
-                'symbol': 'circle',
-                'symbolSize': 8,
-                'lineStyle': {'width': 3},
-                'itemStyle': {'color': '#188df0'},
-                'areaStyle': {
-                    'color': {
-                        'type': 'linear',
-                        'x': 0, 'y': 0, 'x2': 0, 'y2': 1,
-                        'colorStops': [
-                            {'offset': 0, 'color': 'rgba(24,141,240,0.5)'},
-                            {'offset': 1, 'color': 'rgba(24,141,240,0)'}
-                        ]
-                    }
-                }
-            })
-
+            }
+            if chart_type == 'line':
+                series.update({
+                    'smooth': True,
+                    'symbol': 'circle',
+                    'symbolSize': 8,
+                    'lineStyle': {'width': 3}
+                })
         elif chart_type == 'scatter':
-            data_points = []
-            for row in preview_data:
-                if x_axis in row and y_axis in row:
-                    x_val = row[x_axis]
-                    y_val = row[y_axis]
-                    if x_val is not None and y_val is not None:
-                        data_points.append([float(x_val), float(y_val)])
-
-            config['xAxis']['type'] = 'value'
-            config['series'].append({
+            series = {
                 'type': 'scatter',
-                'data': data_points,
+                'data': valid_data,
                 'symbolSize': 12,
-                'itemStyle': {'color': '#188df0'},
-                'emphasis': {
-                    'itemStyle': {
-                        'shadowBlur': 10,
-                        'shadowColor': 'rgba(0,0,0,0.5)'
-                    }
-                }
-            })
+                'itemStyle': {'color': '#188df0'}
+            }
 
-        # Validate final config has data
-        if chart_type == 'bar' or chart_type == 'line':
-            if not config['xAxis']['data'] or not config['series'][0]['data']:
-                logger.error("Generated config has no data")
-                return None
-        elif chart_type == 'scatter':
-            if not config['series'][0]['data']:
-                logger.error("Generated scatter plot has no data points")
-                return None
+        config['series'].append(series)
+
+        # Final validation of the complete config
+        if not config['series'][0]['data']:
+            logger.error("Generated config has no data in series")
+            return None
 
         return config
 
     except Exception as e:
-        logger.exception("Error generating visualization config")
+        logger.exception(f"Error generating visualization config: {str(e)}")
         return None
 
 def new_gradient_color():
@@ -592,3 +567,50 @@ def determine_best_chart_type(data: Dict[str, Any], columns: List[str]) -> str:
             
     except Exception:
         return 'bar'  # Safe default
+
+def validate_data_quality(data: Dict[str, Any]) -> str:
+    """Validate data quality and return issues description"""
+    issues = []
+    
+    try:
+        preview_data = data.get('preview', [])
+        columns = data.get('columns', [])
+        stats = data.get('column_stats', {})
+
+        # Check for empty or minimal data
+        if not preview_data:
+            issues.append("No preview data available")
+            return "Dataset appears to be empty or inaccessible."
+
+        # Check for headers-only data
+        if len(preview_data) == 0 and columns:
+            issues.append("Dataset contains only headers")
+            return "Dataset contains only headers without data. Consider adding sample data or explaining the expected format."
+
+        # Check for missing values
+        for col in columns:
+            null_count = sum(1 for row in preview_data if row.get(col) is None or row.get(col) == '')
+            if null_count > 0:
+                issues.append(f"Column '{col}' has {null_count} missing values")
+
+        # Check for NaN values in numeric columns
+        for col, stat in stats.items():
+            if stat.get('type') == 'numeric':
+                nan_count = sum(1 for row in preview_data if isinstance(row.get(col), float) and math.isnan(row.get(col)))
+                if nan_count > 0:
+                    issues.append(f"Column '{col}' has {nan_count} NaN values")
+
+        # Check for inconsistent data types
+        for col in columns:
+            types_found = set(type(row.get(col)) for row in preview_data if row.get(col) is not None)
+            if len(types_found) > 1:
+                issues.append(f"Column '{col}' has mixed data types: {', '.join(str(t) for t in types_found)}")
+
+        if issues:
+            return "Data Quality Issues Found:\n- " + "\n- ".join(issues) + "\n\nRecommendations will be provided in the analysis."
+        
+        return ""
+
+    except Exception as e:
+        logger.error(f"Error validating data quality: {str(e)}")
+        return "Unable to fully validate data quality. Analysis will be performed with available data."
