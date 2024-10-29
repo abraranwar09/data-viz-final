@@ -28,19 +28,14 @@ async function setupAIAssistant() {
         return;
     }
 
-    // Updated chat container structure with equalizer-style loading indicator
+    // Simplified chat container structure with a guaranteed working loading indicator
     sidebar.innerHTML = `
         <div class="ai-sidebar-header d-flex justify-content-between align-items-center">
             <h5 class="mb-0">
                 <i class="bi bi-robot me-2"></i>AI Assistant
-                <div class="ai-thinking d-none">
-                    <div class="equalizer">
-                        <div class="bar"></div>
-                        <div class="bar"></div>
-                        <div class="bar"></div>
-                        <div class="bar"></div>
-                    </div>
-                </div>
+                <span class="thinking-dots d-none">
+                    <span>.</span><span>.</span><span>.</span>
+                </span>
             </h5>
             <button class="btn btn-link d-lg-none" id="closeAiSidebar">
                 <i class="bi bi-x-lg"></i>
@@ -80,7 +75,7 @@ async function setupAIAssistant() {
         askButton: document.getElementById('askAI'),
         questionInput: document.getElementById('aiQuestion'),
         chatMessages: document.getElementById('chatMessages'),
-        thinkingIndicator: document.querySelector('.ai-thinking')
+        thinkingDots: document.querySelector('.thinking-dots')
     };
 
     // Check if all required elements exist
@@ -124,7 +119,7 @@ async function handleAIQuestion() {
         questionInput: document.getElementById('aiQuestion'),
         chatMessages: document.getElementById('chatMessages'),
         askButton: document.getElementById('askAI'),
-        thinkingIndicator: document.querySelector('.ai-thinking')
+        thinkingDots: document.querySelector('.thinking-dots')
     };
 
     // Verify all elements exist
@@ -146,7 +141,7 @@ async function handleAIQuestion() {
         // Show thinking animation
         elements.questionInput.disabled = true;
         elements.askButton.disabled = true;
-        elements.thinkingIndicator.classList.remove('d-none');
+        elements.thinkingDots.classList.remove('d-none');
 
         // Add user message
         addMessage('user', question);
@@ -192,7 +187,7 @@ async function handleAIQuestion() {
         // Hide thinking animation
         elements.questionInput.disabled = false;
         elements.askButton.disabled = false;
-        elements.thinkingIndicator.classList.add('d-none');
+        elements.thinkingDots.classList.add('d-none');
         scrollToBottom();
     }
 }
@@ -212,6 +207,33 @@ function addMessage(type, content) {
     let icon = type === 'user' ? 'bi-person-circle' : 
                type === 'error' ? 'bi-exclamation-triangle' : 
                'bi-robot';
+    
+    // Check for visualization configs in the message
+    if (type === 'assistant' && content.includes('```echarts')) {
+        // Extract all visualization configs
+        const vizConfigs = [];
+        const regex = /```echarts\n([\s\S]*?)\n```/g;
+        let match;
+        
+        // Find all visualization configs in the message
+        while ((match = regex.exec(content)) !== null) {
+            try {
+                const config = JSON.parse(match[1]);
+                vizConfigs.push(config);
+            } catch (e) {
+                console.error('Failed to parse visualization config:', e);
+            }
+        }
+
+        // Remove the raw configs from the message
+        content = content.replace(/```echarts[\s\S]*?```/g, '');
+
+        // Update visualizations if we found any configs
+        if (vizConfigs.length > 0) {
+            console.log(`Found ${vizConfigs.length} visualizations`);
+            updateVisualizations(vizConfigs);
+        }
+    }
     
     let renderedContent = type === 'user' ? content : marked.parse(content);
     

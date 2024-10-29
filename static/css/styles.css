@@ -41,6 +41,7 @@
     padding: 1rem;
     min-height: 400px;
     margin-bottom: 1rem;
+    transition: all 0.3s ease;
 }
 
 /* Visualization Loading */
@@ -234,4 +235,77 @@
 
 .ai-status-indicator.d-none {
     display: none !important;
+}
+
+/* Visualization Container Styles */
+.visualization-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 1rem;
+    transition: all 0.3s ease;
+}
+
+.visualization-grid.single-view {
+    grid-template-columns: 1fr;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+    .visualization-grid {
+        grid-template-columns: 1fr;
+    }
+    
+    .chart-container {
+        min-height: 300px;
+    }
+}
+
+/* Simple, reliable loading indicator */
+.thinking-dots {
+    display: inline-block;
+    margin-left: 8px;
+}
+
+.thinking-dots span {
+    display: inline-block;
+    animation: dotFade 1.4s infinite;
+    opacity: 0;
+    font-size: 20px;
+    line-height: 10px;
+}
+
+.thinking-dots span:nth-child(1) { animation-delay: 0.0s; }
+.thinking-dots span:nth-child(2) { animation-delay: 0.2s; }
+.thinking-dots span:nth-child(3) { animation-delay: 0.4s; }
+
+@keyframes dotFade {
+    0% { opacity: 0; }
+    50% { opacity: 1; }
+    100% { opacity: 0; }
+}
+
+/* Make sure the loading indicator is visible */
+.thinking-dots.d-none {
+    display: none !important;
+}
+
+/* Visualization loading overlay */
+.viz-loading-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.7);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 1000;
+    border-radius: 5px;
+}
+
+/* Make sure the spinner is visible */
+.spinner-border {
+    width: 3rem;
+    height: 3rem;
 }

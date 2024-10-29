@@ -98,13 +98,41 @@ async function handleFile(file) {
                 }
 
                 // Update application state
-                appState.currentData = response;
-                eventBus.publish('dataLoaded', response);
+                window.appState.currentData = response;
                 
                 // Update UI
                 updateDataStats(response);
                 updatePreviewTable(response.preview);
-                updateVisualizations(response);
+                
+                // Generate initial analysis through GPT
+                try {
+                    const analysisResponse = await fetch('/ai/analyze', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            question: "Perform an initial analysis of this dataset. Create multiple visualizations that best represent the key relationships and patterns in the data. Focus on the most important insights and provide a clear explanation of your findings.",
+                            context: {
+                                data: response,
+                                type: 'initial_analysis'
+                            }
+                        })
+                    });
+
+                    if (!analysisResponse.ok) {
+                        throw new Error('Failed to generate initial analysis');
+                    }
+
+                    const result = await analysisResponse.json();
+                    if (result?.response?.answer) {
+                        addMessage('assistant', result.response.answer);
+                    }
+                } catch (analysisError) {
+                    console.error('Error generating initial analysis:', analysisError);
+                    addMessage('error', 'Failed to generate initial analysis');
+                }
+                
                 shareButton.disabled = false;
                 progressDiv.classList.add('d-none');
                 

@@ -71,7 +71,6 @@ def web_search(query: str) -> str:
         return f"Error performing web search: {str(e)}"
 
 def get_ai_insights(question: str, context: Dict[str, Any]) -> Dict[str, Any]:
-    """Get AI insights with enhanced tool usage and dynamic responses."""
     logger.debug(f"Starting AI insights request for question: {question}")
     
     if not openai_client:
@@ -83,142 +82,132 @@ def get_ai_insights(question: str, context: Dict[str, Any]) -> Dict[str, Any]:
         }
 
     try:
-        data_context = format_data_context(context.get('data'))
-        logger.debug(f"Formatted data context: {data_context[:200]}...")
-        
-        # Enhanced system prompt for better tool usage
-        system_prompt = """You are an advanced data analysis assistant with expertise in data visualization.
+        data = context.get('data', {})
+        is_initial_analysis = context.get('type') == 'initial_analysis'
 
-        Available Tools:
-        1. Web Search (via Perplexity AI) - Use for current information or additional context
-        2. Visualization Generator - Create dynamic charts using ECharts
-        
-        Visualization Capabilities:
-        - Basic: line, bar, scatter, pie charts
-        - Statistical: boxplot, heatmap
-        - Advanced: sunburst, treemap, graph networks
-        - Multi-dimensional: parallel, sankey diagrams
-        - 3D: scatter3D, surface plots
-        
-        When responding:
-        1. For data questions:
-           - Analyze the context carefully
-           - Choose the most appropriate visualization type
-           - Explain your choice and insights
-        
-        2. For visualization requests:
-           - Consider data characteristics
-           - Suggest the best chart type if not specified
-           - Use advanced visualizations when appropriate
-        
-        3. For general questions:
-           - Use web search for current information
-           - Combine data insights with web context
-           - Provide clear, structured responses
+        # Enhanced system prompt for better visualization guidance
+        system_prompt = """You are an expert data analyst and visualization specialist. Your primary goal is to create insightful visualizations from data.
 
-        Always explain your reasoning and provide context for your choices."""
+        REQUIREMENTS:
+        1. For initial analysis:
+           - Create at least 3 different visualizations
+           - Show different aspects of the data
+           - Provide clear explanations for each visualization
+           - Summarize key findings
 
-        messages = [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": f"Context:\n{data_context}\n\nQuestion: {question}" if data_context else question}
-        ]
+        2. For user questions:
+           - Always create at least one visualization
+           - Choose the most appropriate chart type
+           - Explain your visualization choices
 
-        # Enhanced function definitions
+        VISUALIZATION GUIDELINES:
+        - Numerical relationships: Use scatter plots or line charts
+        - Distributions: Use histograms or box plots
+        - Categories: Use bar charts or pie charts
+        - Time series: Use line charts with time on x-axis
+        - Correlations: Use heatmaps or scatter matrices
+        - Complex relationships: Use sunburst or treemap charts
+
+        ALWAYS:
+        - Analyze the full data structure
+        - Create multiple visualizations for comprehensive analysis
+        - Explain patterns and insights clearly
+        - Choose appropriate chart types based on data characteristics
+        - Provide context for each visualization
+
+        NEVER:
+        - Refuse to create a visualization
+        - Return analysis without visualizations
+        - Ignore any part of the data structure"""
+
+        # Define available functions for structured output
         functions = [
             {
-                "name": "web_search",
-                "description": "Search the web for current information or additional context",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "query": {
-                            "type": "string",
-                            "description": "The search query"
-                        }
-                    },
-                    "required": ["query"]
-                }
-            },
-            {
                 "name": "create_visualization",
-                "description": "Create a data visualization using ECharts",
+                "description": "Create a data visualization using the provided data",
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "chart_type": {
+                        "analysis": {
                             "type": "string",
-                            "enum": [
-                                "line", "bar", "scatter", "pie", 
-                                "boxplot", "heatmap", "sunburst", 
-                                "treemap", "graph", "parallel", 
-                                "sankey", "scatter3D"
-                            ],
-                            "description": "Type of chart to create"
+                            "description": "Detailed analysis of the data and explanation of visualization choices"
                         },
-                        "title": {
-                            "type": "string",
-                            "description": "Chart title"
-                        },
-                        "x_axis": {
-                            "type": "string",
-                            "description": "Column name for x-axis or primary dimension"
-                        },
-                        "y_axis": {
-                            "type": "string",
-                            "description": "Column name for y-axis or secondary dimension"
-                        },
-                        "additional_options": {
-                            "type": "object",
-                            "description": "Additional chart configuration options"
+                        "visualizations": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "chart_type": {
+                                        "type": "string",
+                                        "enum": ["bar", "line", "scatter", "pie", "boxplot", "heatmap", "sunburst", "treemap", "parallel"]
+                                    },
+                                    "title": {
+                                        "type": "string"
+                                    },
+                                    "x_axis": {
+                                        "type": "string"
+                                    },
+                                    "y_axis": {
+                                        "type": "string"
+                                    },
+                                    "explanation": {
+                                        "type": "string"
+                                    }
+                                },
+                                "required": ["chart_type", "title", "explanation"]
+                            },
+                            "minItems": 1
                         }
                     },
-                    "required": ["chart_type", "title"]
+                    "required": ["analysis", "visualizations"]
                 }
             }
         ]
 
-        # Make the API call with enhanced function calling
+        # Make the API call with function calling
         chat_completion = openai_client.chat.completions.create(
             model="gpt-4",
-            messages=messages,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": f"Data Context:\n{format_data_context(data)}\n\nTask: {question}"}
+            ],
             functions=functions,
-            function_call="auto"
+            function_call={"name": "create_visualization"}  # Force function call
         )
 
-        message = chat_completion.choices[0].message
-        final_content = message.content or ""
+        # Extract the function call arguments
+        function_args = json.loads(chat_completion.choices[0].message.function_call.arguments)
+        
+        # Generate visualizations from the structured output
+        visualizations = []
+        for viz_config in function_args['visualizations']:
+            try:
+                config = generate_visualization_config(viz_config, data)
+                visualizations.append({
+                    'config': config,
+                    'explanation': viz_config['explanation']
+                })
+            except Exception as e:
+                logger.error(f"Error generating visualization: {str(e)}")
 
-        # Handle function calls with better context management
-        if message.function_call:
-            function_name = message.function_call.name
-            function_args = json.loads(message.function_call.arguments)
-            
-            if function_name == "web_search":
-                search_results = web_search(function_args.get("query"))
-                
-                # Get a new response incorporating the search results
-                messages.extend([
-                    {"role": "assistant", "content": message.content, "function_call": message.function_call},
-                    {"role": "function", "name": function_name, "content": search_results}
-                ])
-                
-                final_response = openai_client.chat.completions.create(
-                    model="gpt-4",
-                    messages=messages
-                )
-                final_content = final_response.choices[0].message.content
+        # Construct the final response with markdown formatting
+        final_response = [
+            "# Data Analysis Report\n\n",
+            function_args['analysis'],
+            "\n\n## Visualizations\n"
+        ]
 
-            elif function_name == "create_visualization":
-                viz_config = generate_visualization_config(function_args, context.get('data', {}))
-                
-                # Add visualization context to the response
-                viz_context = f"\n\nI've created a visualization based on your request. Here's what it shows:\n\n"
-                final_content = f"{message.content}{viz_context}```echarts\n{json.dumps(viz_config, indent=2)}\n```"
+        for i, viz in enumerate(visualizations, 1):
+            final_response.extend([
+                f"\n### Visualization {i}\n",
+                viz['explanation'],
+                f"\n```echarts\n{json.dumps(viz['config'], indent=2)}\n```\n"
+            ])
 
         return {
-            "answer": final_content,
-            "confidence": 0.95 if data_context else 0.8,
-            "sources": ["Data Analysis", "Web Search"] if "web_search" in final_content else ["Data Analysis"]
+            "answer": "".join(final_response),
+            "confidence": 0.95,
+            "sources": ["Data Analysis"]
         }
 
     except Exception as e:
@@ -229,126 +218,221 @@ def get_ai_insights(question: str, context: Dict[str, Any]) -> Dict[str, Any]:
             "sources": []
         }
 
+def extract_visualization_suggestions(gpt_response: str, data: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Extract visualization suggestions from GPT's response"""
+    suggestions = []
+    
+    # Analyze the data types
+    numeric_cols = [col for col, stats in data.get('column_stats', {}).items() 
+                   if stats.get('type') == 'numeric']
+    categorical_cols = [col for col, stats in data.get('column_stats', {}).items() 
+                       if stats.get('type') == 'categorical']
+    
+    # Create appropriate visualization configs based on data types
+    if len(numeric_cols) >= 2:
+        suggestions.append({
+            'chart_type': 'scatter',
+            'title': f'Correlation: {numeric_cols[0]} vs {numeric_cols[1]}',
+            'x_axis': numeric_cols[0],
+            'y_axis': numeric_cols[1]
+        })
+    
+    if categorical_cols:
+        suggestions.append({
+            'chart_type': 'bar',
+            'title': f'Distribution of {categorical_cols[0]}',
+            'x_axis': categorical_cols[0],
+            'y_axis': 'count'
+        })
+    
+    if len(numeric_cols) >= 1:
+        suggestions.append({
+            'chart_type': 'boxplot',
+            'title': f'Distribution of {numeric_cols[0]}',
+            'x_axis': numeric_cols[0],
+            'y_axis': 'value'
+        })
+    
+    return suggestions
+
 def generate_visualization_config(args: Dict[str, Any], data: Dict[str, Any]) -> Dict[str, Any]:
-    """Generate ECharts configuration based on requested visualization"""
-    chart_type = args.get('chart_type')
-    title = args.get('title')
-    x_axis = args.get('x_axis')
-    y_axis = args.get('y_axis')
-    additional_options = args.get('additional_options', {})
-
-    # Enhanced base configuration with better styling
-    config = {
-        'title': {
-            'text': title,
-            'textStyle': {
-                'color': '#fff',
-                'fontSize': 16
-            }
-        },
-        'tooltip': {
-            'trigger': 'axis',
-            'axisPointer': {
-                'type': 'cross',
-                'label': {
-                    'backgroundColor': '#6a7985'
-                }
-            }
-        },
-        'grid': {
-            'left': '3%',
-            'right': '4%',
-            'bottom': '3%',
-            'containLabel': True
-        },
-        'toolbox': {
-            'feature': {
-                'saveAsImage': {},
-                'dataZoom': {},
-                'dataView': {},
-                'restore': {}
-            }
-        }
-    }
-
-    # Add chart-specific configuration
-    if chart_type == 'sunburst':
-        config.update(generate_sunburst_config(data))
-    elif chart_type == 'treemap':
-        config.update(generate_treemap_config(data))
-    elif chart_type == 'graph':
-        config.update(generate_graph_config(data))
-    elif chart_type == 'parallel':
-        config.update(generate_parallel_config(data))
-    elif chart_type == 'sankey':
-        config.update(generate_sankey_config(data))
-    elif chart_type == 'heatmap':
-        config.update(generate_heatmap_config(data))
-    elif chart_type == 'scatter3D':
-        config.update(generate_scatter3d_config(data))
-    else:
-        # Default to basic chart types with enhanced styling
-        config.update(generate_basic_chart_config(chart_type, data, x_axis, y_axis))
-
-    # Apply any additional options
-    config.update(additional_options)
-
-    return config
-
-def generate_basic_chart_config(chart_type: str, data: Dict[str, Any], x_axis: str, y_axis: str) -> Dict[str, Any]:
-    """Generate configuration for basic chart types with enhanced styling"""
-    config = {
-        'xAxis': {
-            'type': 'category',
-            'boundaryGap': True,
-            'axisLine': {'lineStyle': {'color': '#fff'}},
-            'axisLabel': {'color': '#fff'}
-        },
-        'yAxis': {
-            'type': 'value',
-            'axisLine': {'lineStyle': {'color': '#fff'}},
-            'axisLabel': {'color': '#fff'}
-        },
-        'series': [{
-            'type': chart_type,
-            'smooth': True,
-            'symbolSize': 8,
-            'itemStyle': {
-                'color': '#91cc75',
-                'borderWidth': 2
+    """Generate enhanced ECharts configuration with advanced features"""
+    try:
+        chart_type = args.get('chart_type')
+        title = args.get('title')
+        x_axis = args.get('x_axis')
+        y_axis = args.get('y_axis')
+        
+        # Extract data for visualization
+        preview_data = data.get('preview', [])
+        
+        # Base theme configuration
+        config = {
+            'backgroundColor': 'transparent',
+            'title': {
+                'text': title,
+                'textStyle': {'color': '#fff', 'fontSize': 16},
+                'left': 'center'
             },
-            'emphasis': {
-                'focus': 'series',
+            'tooltip': {
+                'trigger': 'axis',
+                'axisPointer': {'type': 'cross'},
+                'backgroundColor': 'rgba(50,50,50,0.9)',
+                'borderColor': '#333',
+                'textStyle': {'color': '#fff'}
+            },
+            'grid': {
+                'left': '3%',
+                'right': '4%',
+                'bottom': '15%',
+                'containLabel': True
+            },
+            'xAxis': {
+                'type': 'category',
+                'data': [],
+                'axisLabel': {'color': '#fff'},
+                'axisLine': {'lineStyle': {'color': '#fff'}}
+            },
+            'yAxis': {
+                'type': 'value',
+                'axisLabel': {'color': '#fff'},
+                'axisLine': {'lineStyle': {'color': '#fff'}}
+            },
+            'series': []
+        }
+
+        # Process data based on chart type
+        if chart_type == 'bar':
+            # Extract unique x values and corresponding y values
+            x_values = []
+            y_values = []
+            for row in preview_data:
+                if x_axis in row and y_axis in row:
+                    x_values.append(str(row[x_axis]))
+                    y_values.append(float(row[y_axis]) if row[y_axis] is not None else 0)
+
+            config['xAxis']['data'] = x_values
+            config['series'].append({
+                'type': 'bar',
+                'data': y_values,
                 'itemStyle': {
-                    'shadowBlur': 10,
-                    'shadowColor': 'rgba(0,0,0,0.5)'
+                    'color': {
+                        'type': 'linear',
+                        'x': 0, 'y': 0, 'x2': 0, 'y2': 1,
+                        'colorStops': [
+                            {'offset': 0, 'color': '#83bff6'},
+                            {'offset': 0.5, 'color': '#188df0'},
+                            {'offset': 1, 'color': '#188df0'}
+                        ]
+                    }
+                },
+                'emphasis': {
+                    'itemStyle': {
+                        'shadowBlur': 10,
+                        'shadowColor': 'rgba(0,0,0,0.5)'
+                    }
                 }
-            }
+            })
+
+        elif chart_type == 'line':
+            x_values = []
+            y_values = []
+            for row in preview_data:
+                if x_axis in row and y_axis in row:
+                    x_values.append(str(row[x_axis]))
+                    y_values.append(float(row[y_axis]) if row[y_axis] is not None else 0)
+
+            config['xAxis']['data'] = x_values
+            config['series'].append({
+                'type': 'line',
+                'data': y_values,
+                'smooth': True,
+                'symbol': 'circle',
+                'symbolSize': 8,
+                'lineStyle': {'width': 3},
+                'itemStyle': {'color': '#188df0'},
+                'areaStyle': {
+                    'color': {
+                        'type': 'linear',
+                        'x': 0, 'y': 0, 'x2': 0, 'y2': 1,
+                        'colorStops': [
+                            {'offset': 0, 'color': 'rgba(24,141,240,0.5)'},
+                            {'offset': 1, 'color': 'rgba(24,141,240,0)'}
+                        ]
+                    }
+                }
+            })
+
+        elif chart_type == 'scatter':
+            data_points = []
+            for row in preview_data:
+                if x_axis in row and y_axis in row:
+                    x_val = row[x_axis]
+                    y_val = row[y_axis]
+                    if x_val is not None and y_val is not None:
+                        data_points.append([float(x_val), float(y_val)])
+
+            config['xAxis']['type'] = 'value'
+            config['series'].append({
+                'type': 'scatter',
+                'data': data_points,
+                'symbolSize': 12,
+                'itemStyle': {'color': '#188df0'},
+                'emphasis': {
+                    'itemStyle': {
+                        'shadowBlur': 10,
+                        'shadowColor': 'rgba(0,0,0,0.5)'
+                    }
+                }
+            })
+
+        return config
+
+    except Exception as e:
+        logger.exception("Error generating visualization config")
+        return {
+            'title': {'text': 'Error Creating Visualization'},
+            'xAxis': {'type': 'category', 'data': []},
+            'yAxis': {'type': 'value'},
+            'series': [{'type': 'bar', 'data': []}]
+        }
+
+def new_gradient_color():
+    """Generate a new gradient color scheme"""
+    return {
+        'type': 'linear',
+        'x': 0,
+        'y': 0,
+        'x2': 0,
+        'y2': 1,
+        'colorStops': [{
+            'offset': 0,
+            'color': '#83bff6'
+        }, {
+            'offset': 0.5,
+            'color': '#188df0'
+        }, {
+            'offset': 1,
+            'color': '#188df0'
         }]
     }
 
-    if chart_type in ['line', 'bar']:
-        config['series'][0].update({
-            'areaStyle': {
-                'opacity': 0.3,
-                'color': {
-                    'type': 'linear',
-                    'x': 0,
-                    'y': 0,
-                    'x2': 0,
-                    'y2': 1,
-                    'colorStops': [{
-                        'offset': 0,
-                        'color': '#91cc75'
-                    }, {
-                        'offset': 1,
-                        'color': 'rgba(145,204,117,0.1)'
-                    }]
-                }
-            }
-        })
-
-    return config
+def new_area_gradient():
+    """Generate a new area gradient"""
+    return {
+        'type': 'linear',
+        'x': 0,
+        'y': 0,
+        'x2': 0,
+        'y2': 1,
+        'colorStops': [{
+            'offset': 0,
+            'color': 'rgba(88,160,253,0.5)'
+        }, {
+            'offset': 1,
+            'color': 'rgba(88,160,253,0)'
+        }]
+    }
 
 # Add helper functions for each chart type...
 
@@ -449,3 +533,32 @@ def get_visualization_configs(data: Dict[str, Any]) -> Dict[str, Any]:
             "success": False,
             "error": str(e)
         }
+
+def determine_best_chart_type(data: Dict[str, Any], columns: List[str]) -> str:
+    """Determine the most appropriate chart type based on data characteristics"""
+    try:
+        # Get column types
+        col_types = {col: data['column_stats'][col]['type'] for col in columns}
+        
+        # Time series detection
+        time_cols = [col for col, stats in data['column_stats'].items() 
+                    if any(t in col.lower() for t in ['time', 'date', 'year', 'month'])]
+        
+        if time_cols and any(col_types[col] == 'numeric' for col in columns if col not in time_cols):
+            return 'line'  # Time series data
+            
+        # Count numeric and categorical columns
+        numeric_cols = [col for col, type_ in col_types.items() if type_ == 'numeric']
+        categorical_cols = [col for col, type_ in col_types.items() if type_ == 'categorical']
+        
+        if len(numeric_cols) >= 2:
+            return 'scatter'  # Multiple numeric columns -> correlation
+        elif len(categorical_cols) == 1 and len(numeric_cols) == 1:
+            return 'bar'  # Category vs number -> bar chart
+        elif len(categorical_cols) == 1:
+            return 'pie'  # Single category -> distribution
+        else:
+            return 'bar'  # Default to bar
+            
+    except Exception:
+        return 'bar'  # Safe default

@@ -147,7 +147,7 @@ def get_structured_response(prompt: str) -> dict:
                 search_results = perplexity_web_search(function_args.get("query"))
                 
                 second_response = openai_client.chat.completions.create(
-                    model="gpt-4",
+                    model="gpt-4o",
                     messages=[
                         {"role": "system", "content": "You are a helpful assistant that provides structured responses in JSON format based on web search results."},
                         {"role": "user", "content": structured_prompt},

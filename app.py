@@ -278,23 +278,27 @@ def upload_file():
         
         try:
             logger.debug(f"Processing file with extension: {extension}")
-            if extension == 'csv':
+            if extension in ['csv', 'tsv', 'txt']:
                 # Try different encodings and delimiters
                 try:
                     df = pd.read_csv(file_buffer, encoding='utf-8')
                 except:
                     file_buffer.seek(0)
-                    df = pd.read_csv(file_buffer, encoding='latin1')
+                    try:
+                        df = pd.read_csv(file_buffer, encoding='latin1')
+                    except:
+                        file_buffer.seek(0)
+                        # Try with explicit delimiter detection
+                        sample = file_content.decode('utf-8', errors='ignore')[:1000]
+                        if ',' in sample:
+                            df = pd.read_csv(file_buffer, sep=',')
+                        elif ';' in sample:
+                            df = pd.read_csv(file_buffer, sep=';')
+                        elif '\t' in sample:
+                            df = pd.read_csv(file_buffer, sep='\t')
+                        else:
+                            raise ValueError("Could not determine file delimiter")
                 
-                # If we got only one column, try different delimiter
-                if len(df.columns) == 1:
-                    file_buffer.seek(0)
-                    df = pd.read_csv(file_buffer, sep=',', engine='python')
-                
-                logger.debug(f"CSV columns detected: {df.columns.tolist()}")
-                
-            elif extension in ['tsv', 'txt']:
-                df = pd.read_csv(file_buffer, sep='\t')
             elif extension in ['xlsx', 'xls']:
                 df = pd.read_excel(file_buffer)
             elif extension == 'json':
@@ -314,11 +318,7 @@ def upload_file():
             logger.debug(f"Columns: {df.columns.tolist()}")
             logger.debug(f"First row: {df.iloc[0].to_dict()}")
             
-            if len(df) > CHUNK_SIZE:
-                result = chunk_process_data(df, chunk_size=CHUNK_SIZE)
-            else:
-                result = process_data(df)
-            
+            result = process_data(df)
             logger.debug("Data processing completed successfully")
             return jsonify(result)
             

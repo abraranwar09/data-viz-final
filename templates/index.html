@@ -100,30 +100,25 @@
                     <!-- Visualizations Section -->
                     <div class="col-12 mb-4">
                         <div class="card">
-                            <div class="card-header">
-                                <h5 class="card-title">Visualizations</h5>
+                            <div class="card-header d-flex justify-content-between align-items-center">
+                                <h5 class="card-title mb-0">Visualizations</h5>
+                                <div class="btn-group">
+                                    <button class="btn btn-outline-secondary btn-sm" id="gridViewBtn">
+                                        <i class="bi bi-grid"></i>
+                                    </button>
+                                    <button class="btn btn-outline-secondary btn-sm" id="singleViewBtn">
+                                        <i class="bi bi-square"></i>
+                                    </button>
+                                </div>
                             </div>
                             <div class="card-body">
                                 <div class="visualization-loading d-none">
                                     <div class="loading-indicator">
                                         <div class="loading-bar"></div>
-                                        <div class="loading-bar"></div>
-                                        <div class="loading-bar"></div>
                                     </div>
                                 </div>
-                                <div class="row">
-                                    <div class="col-md-6 mb-4">
-                                        <div id="chart1" class="chart-container"></div>
-                                    </div>
-                                    <div class="col-md-6 mb-4">
-                                        <div id="chart2" class="chart-container"></div>
-                                    </div>
-                                    <div class="col-md-6 mb-4">
-                                        <div id="chart3" class="chart-container"></div>
-                                    </div>
-                                    <div class="col-md-6 mb-4">
-                                        <div id="chart4" class="chart-container"></div>
-                                    </div>
+                                <div id="visualizationContainer" class="visualization-grid">
+                                    <!-- Charts will be dynamically added here -->
                                 </div>
                             </div>
                         </div>

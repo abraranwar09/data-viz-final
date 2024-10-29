@@ -4,13 +4,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         // Initialize app state first
         await initializeAppState();
         
-        // Initialize AI Assistant before other components
+        // Initialize components in order
         await initializeAIAssistant();
-        
-        // Then initialize other components
         initializeFileHandlers();
         initializeSharing();
-        await initializeCharts();
         
         console.log('Application initialized successfully');
     } catch (error) {
@@ -31,14 +28,6 @@ async function initializeAppState(retryCount = 0) {
         };
 
         // Initialize charts after state is ready
-        await new Promise(resolve => {
-            if (document.readyState === 'loading') {
-                document.addEventListener('DOMContentLoaded', resolve);
-            } else {
-                resolve();
-            }
-        });
-
         await initializeCharts();
         window.appState.initialized = true;
 
