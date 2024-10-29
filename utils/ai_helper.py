@@ -71,7 +71,7 @@ def web_search(query: str) -> str:
         return f"Error performing web search: {str(e)}"
 
 def get_ai_insights(question: str, context: Dict[str, Any]) -> Dict[str, Any]:
-    """Get AI insights with proper data context handling."""
+    """Get AI insights with enhanced tool usage and dynamic responses."""
     logger.debug(f"Starting AI insights request for question: {question}")
     
     if not openai_client:
@@ -83,96 +83,123 @@ def get_ai_insights(question: str, context: Dict[str, Any]) -> Dict[str, Any]:
         }
 
     try:
-        # Format the data context
         data_context = format_data_context(context.get('data'))
         logger.debug(f"Formatted data context: {data_context[:200]}...")
         
         # Enhanced system prompt for better tool usage
-        system_prompt = """You are a helpful data analysis assistant. You have access to:
-        1. The uploaded data for analysis
-        2. A web search tool to find relevant information
-        3. A visualization tool to create charts
+        system_prompt = """You are an advanced data analysis assistant with expertise in data visualization.
 
-        When answering:
-        - If you need external information, use the web_search tool
-        - If the question involves data patterns or trends, use create_visualization
-        - Always explain your insights clearly using markdown formatting
-        - Use bullet points and headers for better readability
-        - Include specific data points to support your analysis
-        """
+        Available Tools:
+        1. Web Search (via Perplexity AI) - Use for current information or additional context
+        2. Visualization Generator - Create dynamic charts using ECharts
+        
+        Visualization Capabilities:
+        - Basic: line, bar, scatter, pie charts
+        - Statistical: boxplot, heatmap
+        - Advanced: sunburst, treemap, graph networks
+        - Multi-dimensional: parallel, sankey diagrams
+        - 3D: scatter3D, surface plots
+        
+        When responding:
+        1. For data questions:
+           - Analyze the context carefully
+           - Choose the most appropriate visualization type
+           - Explain your choice and insights
+        
+        2. For visualization requests:
+           - Consider data characteristics
+           - Suggest the best chart type if not specified
+           - Use advanced visualizations when appropriate
+        
+        3. For general questions:
+           - Use web search for current information
+           - Combine data insights with web context
+           - Provide clear, structured responses
+
+        Always explain your reasoning and provide context for your choices."""
 
         messages = [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": f"Context:\n{data_context}\n\nQuestion: {question}" if data_context else question}
         ]
 
-        # Make the API call with both tools
+        # Enhanced function definitions
+        functions = [
+            {
+                "name": "web_search",
+                "description": "Search the web for current information or additional context",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "query": {
+                            "type": "string",
+                            "description": "The search query"
+                        }
+                    },
+                    "required": ["query"]
+                }
+            },
+            {
+                "name": "create_visualization",
+                "description": "Create a data visualization using ECharts",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "chart_type": {
+                            "type": "string",
+                            "enum": [
+                                "line", "bar", "scatter", "pie", 
+                                "boxplot", "heatmap", "sunburst", 
+                                "treemap", "graph", "parallel", 
+                                "sankey", "scatter3D"
+                            ],
+                            "description": "Type of chart to create"
+                        },
+                        "title": {
+                            "type": "string",
+                            "description": "Chart title"
+                        },
+                        "x_axis": {
+                            "type": "string",
+                            "description": "Column name for x-axis or primary dimension"
+                        },
+                        "y_axis": {
+                            "type": "string",
+                            "description": "Column name for y-axis or secondary dimension"
+                        },
+                        "additional_options": {
+                            "type": "object",
+                            "description": "Additional chart configuration options"
+                        }
+                    },
+                    "required": ["chart_type", "title"]
+                }
+            }
+        ]
+
+        # Make the API call with enhanced function calling
         chat_completion = openai_client.chat.completions.create(
             model="gpt-4",
             messages=messages,
-            functions=[
-                {
-                    "name": "web_search",
-                    "description": "Search the web for additional information or context",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "query": {
-                                "type": "string",
-                                "description": "The search query"
-                            }
-                        },
-                        "required": ["query"]
-                    }
-                },
-                {
-                    "name": "create_visualization",
-                    "description": "Create a data visualization using ECharts",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "chart_type": {
-                                "type": "string",
-                                "enum": ["bar", "line", "scatter", "pie", "boxplot", "heatmap"],
-                                "description": "Type of chart to create"
-                            },
-                            "title": {
-                                "type": "string",
-                                "description": "Chart title"
-                            },
-                            "x_axis": {
-                                "type": "string",
-                                "description": "Column name for x-axis"
-                            },
-                            "y_axis": {
-                                "type": "string",
-                                "description": "Column name for y-axis"
-                            }
-                        },
-                        "required": ["chart_type", "title"]
-                    }
-                }
-            ],
+            functions=functions,
             function_call="auto"
         )
 
         message = chat_completion.choices[0].message
         final_content = message.content or ""
 
-        # Handle function calls
+        # Handle function calls with better context management
         if message.function_call:
             function_name = message.function_call.name
             function_args = json.loads(message.function_call.arguments)
             
-            function_response = None
             if function_name == "web_search":
                 search_results = web_search(function_args.get("query"))
-                function_response = search_results
                 
                 # Get a new response incorporating the search results
                 messages.extend([
                     {"role": "assistant", "content": message.content, "function_call": message.function_call},
-                    {"role": "function", "name": function_name, "content": function_response}
+                    {"role": "function", "name": function_name, "content": search_results}
                 ])
                 
                 final_response = openai_client.chat.completions.create(
@@ -183,12 +210,15 @@ def get_ai_insights(question: str, context: Dict[str, Any]) -> Dict[str, Any]:
 
             elif function_name == "create_visualization":
                 viz_config = generate_visualization_config(function_args, context.get('data', {}))
-                final_content = f"{message.content}\n\n```echarts\n{json.dumps(viz_config, indent=2)}\n```"
+                
+                # Add visualization context to the response
+                viz_context = f"\n\nI've created a visualization based on your request. Here's what it shows:\n\n"
+                final_content = f"{message.content}{viz_context}```echarts\n{json.dumps(viz_config, indent=2)}\n```"
 
         return {
             "answer": final_content,
             "confidence": 0.95 if data_context else 0.8,
-            "sources": ["Data Analysis"] if data_context else ["General Assistant"]
+            "sources": ["Data Analysis", "Web Search"] if "web_search" in final_content else ["Data Analysis"]
         }
 
     except Exception as e:
