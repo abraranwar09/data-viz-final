@@ -1,13 +1,18 @@
 // Main application initialization
 document.addEventListener('DOMContentLoaded', async () => {
     try {
+        // Initialize app state first
         await initializeAppState();
-        initializeFileHandlers();
-        initializeAIAssistant();
-        initializeSharing();
         
-        // Initialize charts after everything else is loaded
+        // Initialize AI Assistant before other components
+        await initializeAIAssistant();
+        
+        // Then initialize other components
+        initializeFileHandlers();
+        initializeSharing();
         await initializeCharts();
+        
+        console.log('Application initialized successfully');
     } catch (error) {
         console.error('Error during application initialization:', error);
         showError('Failed to initialize application. Please refresh the page.');

@@ -17,6 +17,4 @@ dependencies = [
     "requests",
     "alembic",
     "sqlalchemy",
-    "flask-socketio>=5.4.1",
-    "eventlet>=0.37.0",
 ]

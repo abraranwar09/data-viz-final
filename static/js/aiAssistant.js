@@ -8,59 +8,79 @@ marked.setOptions({
 });
 
 function initializeAIAssistant() {
-    // Wait for DOM to be fully loaded
-    if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', setupAIAssistant);
-    } else {
-        setupAIAssistant();
-    }
+    return new Promise((resolve) => {
+        // Wait for DOM to be fully loaded
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', () => setupAIAssistant().then(resolve));
+        } else {
+            setupAIAssistant().then(resolve);
+        }
+    });
 }
 
-function setupAIAssistant() {
-    let aiContainer = document.querySelector('.ai-container');
-    if (!aiContainer) {
-        console.error('AI container not found');
+async function setupAIAssistant() {
+    console.log('Setting up AI assistant');
+    
+    // Find the sidebar first
+    const sidebar = document.querySelector('.ai-sidebar');
+    if (!sidebar) {
+        console.error('AI sidebar not found');
         return;
     }
 
-    aiContainer.innerHTML = `
-        <div class="chat-container">
-            <div class="chat-messages" id="chatMessages">
-                <div class="message message-system">
-                    <div class="d-flex align-items-start">
-                        <div class="me-2">
-                            <i class="bi bi-robot fs-4"></i>
-                        </div>
-                        <div class="message-content flex-grow-1">
-                            Hello! I'm your AI assistant. I can help you analyze your data and create visualizations.
+    // Updated chat container structure with equalizer-style loading indicator
+    sidebar.innerHTML = `
+        <div class="ai-sidebar-header d-flex justify-content-between align-items-center">
+            <h5 class="mb-0">
+                <i class="bi bi-robot me-2"></i>AI Assistant
+                <div class="ai-thinking d-none">
+                    <div class="equalizer">
+                        <div class="bar"></div>
+                        <div class="bar"></div>
+                        <div class="bar"></div>
+                        <div class="bar"></div>
+                    </div>
+                </div>
+            </h5>
+            <button class="btn btn-link d-lg-none" id="closeAiSidebar">
+                <i class="bi bi-x-lg"></i>
+            </button>
+        </div>
+        <div class="ai-container">
+            <div class="chat-container">
+                <div class="chat-messages" id="chatMessages">
+                    <div class="message message-system">
+                        <div class="d-flex align-items-start">
+                            <div class="me-2">
+                                <i class="bi bi-robot fs-4"></i>
+                            </div>
+                            <div class="message-content flex-grow-1">
+                                Hello! I'm your AI assistant. I can help you analyze your data and create visualizations.
+                                Try asking me questions about your data or request specific visualizations.
+                            </div>
                         </div>
                     </div>
                 </div>
-            </div>
-            <div class="loading-indicator d-none">
-                <div class="loading-bar"></div>
-                <div class="loading-bar"></div>
-                <div class="loading-bar"></div>
-            </div>
-            <div class="chat-input">
-                <div class="input-group">
-                    <textarea class="form-control" id="aiQuestion" 
-                            placeholder="Ask a question about your data..."
-                            rows="2"></textarea>
-                    <button class="btn btn-primary" type="button" id="askAI">
-                        <i class="bi bi-send me-1"></i>Ask
-                    </button>
+                <div class="chat-input">
+                    <div class="input-group">
+                        <textarea class="form-control" id="aiQuestion" 
+                                placeholder="Ask a question about your data..."
+                                rows="2"></textarea>
+                        <button class="btn btn-primary" type="button" id="askAI">
+                            <i class="bi bi-send me-1"></i>Ask
+                        </button>
+                    </div>
                 </div>
             </div>
         </div>
     `;
 
-    // Verify all required elements exist
+    // Update element references
     const elements = {
         askButton: document.getElementById('askAI'),
         questionInput: document.getElementById('aiQuestion'),
         chatMessages: document.getElementById('chatMessages'),
-        loadingIndicator: document.querySelector('.loading-indicator')
+        thinkingIndicator: document.querySelector('.ai-thinking')
     };
 
     // Check if all required elements exist
@@ -69,7 +89,7 @@ function setupAIAssistant() {
         .map(([name]) => name);
 
     if (missingElements.length > 0) {
-        console.error('Missing required elements:', missingElements);
+        console.error('Failed to initialize AI assistant elements:', missingElements);
         return;
     }
 
@@ -78,58 +98,66 @@ function setupAIAssistant() {
         if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault();
             console.log('Enter key pressed');
-            if (!elements.questionInput.disabled) {
-                await handleAIQuestion();
-            }
+            await handleAIQuestion();
         }
     });
 
     // Add click event listener for ask button
     elements.askButton.addEventListener('click', async () => {
         console.log('Ask button clicked');
-        if (!elements.askButton.disabled) {
-            await handleAIQuestion();
-        }
+        await handleAIQuestion();
     });
 
     // Add initial message if data is loaded
     if (window.appState?.currentData) {
         addMessage('system', 'Data loaded successfully. How can I help you analyze it?');
     }
+
+    console.log('AI assistant initialization complete');
 }
 
 async function handleAIQuestion() {
+    console.log('Handling AI question');
+    
+    // Get elements with error checking
     const elements = {
-        askButton: document.getElementById('askAI'),
         questionInput: document.getElementById('aiQuestion'),
         chatMessages: document.getElementById('chatMessages'),
-        loadingIndicator: document.querySelector('.loading-indicator')
+        askButton: document.getElementById('askAI'),
+        thinkingIndicator: document.querySelector('.ai-thinking')
     };
 
-    if (!elements.loadingIndicator) {
-        console.error('Loading indicator not found');
-        return;
+    // Verify all elements exist
+    for (const [name, element] of Object.entries(elements)) {
+        if (!element) {
+            console.error(`Required element not found: ${name}`);
+            addMessage('error', 'Chat interface error. Please refresh the page.');
+            return;
+        }
     }
 
     const question = elements.questionInput.value.trim();
-    if (!question) return;
+    if (!question) {
+        console.log('Empty question, ignoring');
+        return;
+    }
 
     try {
-        // Disable input and button while processing
+        // Show thinking animation
         elements.questionInput.disabled = true;
         elements.askButton.disabled = true;
-
-        // Show loading indicator
-        elements.loadingIndicator.classList.remove('d-none');
+        elements.thinkingIndicator.classList.remove('d-none');
 
         // Add user message
         addMessage('user', question);
 
         // Check if data is loaded
         if (!window.appState?.currentData) {
-            throw new Error('Please upload some data first.');
+            addMessage('system', 'Please upload some data first before asking questions.');
+            return;
         }
 
+        console.log('Sending request to server');
         const response = await fetch('/ai/analyze', {
             method: 'POST',
             headers: {
@@ -144,50 +172,34 @@ async function handleAIQuestion() {
         });
 
         if (!response.ok) {
-            const errorData = await response.json();
-            throw new Error(errorData.error || 'Failed to get AI response');
+            throw new Error(`Server error: ${response.status}`);
         }
 
         const result = await response.json();
+        console.log('Received response:', result);
 
         if (result?.response?.answer) {
-            const answer = result.response.answer;
-            
-            // Handle visualization in the response
-            if (answer.includes('```echarts')) {
-                const vizConfig = extractVisualizationConfig(answer);
-                if (vizConfig) {
-                    await updateVisualizations([vizConfig]);
-                }
-                
-                // Remove the raw echarts config from the display
-                const cleanAnswer = answer.replace(/```echarts[\s\S]*?```/g, 
-                    '*Visualization generated based on your request*');
-                addMessage('assistant', cleanAnswer);
-            } else {
-                addMessage('assistant', answer);
-            }
-
-            // Clear input after successful response
+            addMessage('assistant', result.response.answer);
             elements.questionInput.value = '';
         } else {
             throw new Error('Invalid response format');
         }
+
     } catch (error) {
         console.error('AI Error:', error);
         addMessage('error', `Error: ${error.message}`);
     } finally {
-        // Re-enable input and button
+        // Hide thinking animation
         elements.questionInput.disabled = false;
         elements.askButton.disabled = false;
-        
-        // Hide loading indicator
-        elements.loadingIndicator.classList.add('d-none');
+        elements.thinkingIndicator.classList.add('d-none');
         scrollToBottom();
     }
 }
 
 function addMessage(type, content) {
+    console.log(`Adding ${type} message:`, content);
+    
     const chatMessages = document.getElementById('chatMessages');
     if (!chatMessages) {
         console.error('Chat messages container not found');
@@ -225,6 +237,7 @@ function scrollToBottom() {
     }
 }
 
+// Add helper function to extract visualization config
 function extractVisualizationConfig(message) {
     const matches = message.match(/```echarts\n([\s\S]*?)\n```/);
     if (matches && matches[1]) {

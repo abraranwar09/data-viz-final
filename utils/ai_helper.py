@@ -72,12 +72,20 @@ def web_search(query: str) -> str:
 
 def get_ai_insights(question: str, context: Dict[str, Any]) -> Dict[str, Any]:
     """Get AI insights with proper data context handling."""
+    logger.debug(f"Starting AI insights request for question: {question}")
+    
     if not openai_client:
-        raise APIKeyError("OpenAI client is not properly initialized")
+        logger.error("OpenAI client not initialized")
+        return {
+            "answer": "The AI service is not properly configured. Please check your API keys.",
+            "confidence": 0,
+            "sources": []
+        }
 
     try:
         # Format the data context
         data_context = format_data_context(context.get('data'))
+        logger.debug(f"Formatted data context: {data_context[:200]}...")
         
         # Enhanced system prompt for better tool usage
         system_prompt = """You are a helpful data analysis assistant. You have access to:
@@ -199,29 +207,116 @@ def generate_visualization_config(args: Dict[str, Any], data: Dict[str, Any]) ->
     y_axis = args.get('y_axis')
     additional_options = args.get('additional_options', {})
 
-    # Base configuration
+    # Enhanced base configuration with better styling
     config = {
-        'title': {'text': title},
-        'tooltip': {'trigger': 'axis'},
-        'grid': {'left': '3%', 'right': '4%', 'bottom': '3%', 'containLabel': True}
+        'title': {
+            'text': title,
+            'textStyle': {
+                'color': '#fff',
+                'fontSize': 16
+            }
+        },
+        'tooltip': {
+            'trigger': 'axis',
+            'axisPointer': {
+                'type': 'cross',
+                'label': {
+                    'backgroundColor': '#6a7985'
+                }
+            }
+        },
+        'grid': {
+            'left': '3%',
+            'right': '4%',
+            'bottom': '3%',
+            'containLabel': True
+        },
+        'toolbox': {
+            'feature': {
+                'saveAsImage': {},
+                'dataZoom': {},
+                'dataView': {},
+                'restore': {}
+            }
+        }
     }
 
     # Add chart-specific configuration
-    if chart_type == 'bar':
-        config.update(generate_bar_chart_config(data, x_axis, y_axis))
-    elif chart_type == 'line':
-        config.update(generate_line_chart_config(data, x_axis, y_axis))
-    elif chart_type == 'scatter':
-        config.update(generate_scatter_chart_config(data, x_axis, y_axis))
-    elif chart_type == 'pie':
-        config.update(generate_pie_chart_config(data, x_axis, y_axis))
-    elif chart_type == 'boxplot':
-        config.update(generate_boxplot_config(data, x_axis))
+    if chart_type == 'sunburst':
+        config.update(generate_sunburst_config(data))
+    elif chart_type == 'treemap':
+        config.update(generate_treemap_config(data))
+    elif chart_type == 'graph':
+        config.update(generate_graph_config(data))
+    elif chart_type == 'parallel':
+        config.update(generate_parallel_config(data))
+    elif chart_type == 'sankey':
+        config.update(generate_sankey_config(data))
     elif chart_type == 'heatmap':
         config.update(generate_heatmap_config(data))
+    elif chart_type == 'scatter3D':
+        config.update(generate_scatter3d_config(data))
+    else:
+        # Default to basic chart types with enhanced styling
+        config.update(generate_basic_chart_config(chart_type, data, x_axis, y_axis))
 
     # Apply any additional options
     config.update(additional_options)
+
+    return config
+
+def generate_basic_chart_config(chart_type: str, data: Dict[str, Any], x_axis: str, y_axis: str) -> Dict[str, Any]:
+    """Generate configuration for basic chart types with enhanced styling"""
+    config = {
+        'xAxis': {
+            'type': 'category',
+            'boundaryGap': True,
+            'axisLine': {'lineStyle': {'color': '#fff'}},
+            'axisLabel': {'color': '#fff'}
+        },
+        'yAxis': {
+            'type': 'value',
+            'axisLine': {'lineStyle': {'color': '#fff'}},
+            'axisLabel': {'color': '#fff'}
+        },
+        'series': [{
+            'type': chart_type,
+            'smooth': True,
+            'symbolSize': 8,
+            'itemStyle': {
+                'color': '#91cc75',
+                'borderWidth': 2
+            },
+            'emphasis': {
+                'focus': 'series',
+                'itemStyle': {
+                    'shadowBlur': 10,
+                    'shadowColor': 'rgba(0,0,0,0.5)'
+                }
+            }
+        }]
+    }
+
+    if chart_type in ['line', 'bar']:
+        config['series'][0].update({
+            'areaStyle': {
+                'opacity': 0.3,
+                'color': {
+                    'type': 'linear',
+                    'x': 0,
+                    'y': 0,
+                    'x2': 0,
+                    'y2': 1,
+                    'colorStops': [{
+                        'offset': 0,
+                        'color': '#91cc75'
+                    }, {
+                        'offset': 1,
+                        'color': 'rgba(145,204,117,0.1)'
+                    }]
+                }
+            }
+        })
 
     return config
 
