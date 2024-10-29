@@ -219,7 +219,13 @@ function addMessage(type, content) {
         while ((match = regex.exec(content)) !== null) {
             try {
                 const config = JSON.parse(match[1]);
-                vizConfigs.push(config);
+                
+                // Validate the config has necessary data
+                if (isValidVisualizationConfig(config)) {
+                    vizConfigs.push(config);
+                } else {
+                    console.warn('Invalid visualization config:', config);
+                }
             } catch (e) {
                 console.error('Failed to parse visualization config:', e);
             }
@@ -228,9 +234,9 @@ function addMessage(type, content) {
         // Remove the raw configs from the message
         content = content.replace(/```echarts[\s\S]*?```/g, '');
 
-        // Update visualizations if we found any configs
+        // Update visualizations if we found any valid configs
         if (vizConfigs.length > 0) {
-            console.log(`Found ${vizConfigs.length} visualizations`);
+            console.log(`Found ${vizConfigs.length} valid visualizations`);
             updateVisualizations(vizConfigs);
         }
     }
@@ -250,6 +256,27 @@ function addMessage(type, content) {
     
     chatMessages.appendChild(messageDiv);
     scrollToBottom();
+}
+
+function isValidVisualizationConfig(config) {
+    // Basic structure validation
+    if (!config || typeof config !== 'object') return false;
+    if (!config.title || !config.series || !Array.isArray(config.series)) return false;
+
+    // Validate series data
+    for (const series of config.series) {
+        if (!series.type) return false;
+        
+        // Check for data based on chart type
+        if (['bar', 'line'].includes(series.type)) {
+            if (!Array.isArray(series.data) || series.data.length === 0) return false;
+            if (!config.xAxis?.data || config.xAxis.data.length === 0) return false;
+        } else if (series.type === 'scatter') {
+            if (!Array.isArray(series.data) || series.data.length === 0) return false;
+        }
+    }
+
+    return true;
 }
 
 function scrollToBottom() {

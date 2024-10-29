@@ -183,26 +183,32 @@ def get_ai_insights(question: str, context: Dict[str, Any]) -> Dict[str, Any]:
         for viz_config in function_args['visualizations']:
             try:
                 config = generate_visualization_config(viz_config, data)
-                visualizations.append({
-                    'config': config,
-                    'explanation': viz_config['explanation']
-                })
+                if config:  # Only add valid configurations
+                    visualizations.append({
+                        'config': config,
+                        'explanation': viz_config['explanation']
+                    })
+                else:
+                    logger.warning(f"Skipping invalid visualization: {viz_config}")
             except Exception as e:
                 logger.error(f"Error generating visualization: {str(e)}")
 
-        # Construct the final response with markdown formatting
+        # Only include visualizations that have valid configs
         final_response = [
             "# Data Analysis Report\n\n",
             function_args['analysis'],
-            "\n\n## Visualizations\n"
         ]
 
-        for i, viz in enumerate(visualizations, 1):
-            final_response.extend([
-                f"\n### Visualization {i}\n",
-                viz['explanation'],
-                f"\n```echarts\n{json.dumps(viz['config'], indent=2)}\n```\n"
-            ])
+        if visualizations:
+            final_response.append("\n\n## Visualizations\n")
+            for i, viz in enumerate(visualizations, 1):
+                final_response.extend([
+                    f"\n### Visualization {i}\n",
+                    viz['explanation'],
+                    f"\n```echarts\n{json.dumps(viz['config'], indent=2)}\n```\n"
+                ])
+        else:
+            final_response.append("\n\nNo valid visualizations could be generated for this data.")
 
         return {
             "answer": "".join(final_response),
@@ -255,17 +261,36 @@ def extract_visualization_suggestions(gpt_response: str, data: Dict[str, Any]) -
     
     return suggestions
 
-def generate_visualization_config(args: Dict[str, Any], data: Dict[str, Any]) -> Dict[str, Any]:
-    """Generate enhanced ECharts configuration with advanced features"""
+def generate_visualization_config(args: Dict[str, Any], data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """Generate enhanced ECharts configuration with validation"""
     try:
         chart_type = args.get('chart_type')
         title = args.get('title')
         x_axis = args.get('x_axis')
         y_axis = args.get('y_axis')
         
+        # Validate required fields
+        if not all([chart_type, title, x_axis, y_axis]):
+            logger.error(f"Missing required fields: {args}")
+            return None
+        
         # Extract data for visualization
         preview_data = data.get('preview', [])
-        
+        if not preview_data:
+            logger.error("No preview data available")
+            return None
+
+        # Validate data availability for the specified axes
+        valid_data_points = [
+            row for row in preview_data
+            if x_axis in row and y_axis in row 
+            and row[x_axis] is not None and row[y_axis] is not None
+        ]
+
+        if not valid_data_points:
+            logger.error(f"No valid data points found for {x_axis} vs {y_axis}")
+            return None
+
         # Base theme configuration
         config = {
             'backgroundColor': 'transparent',
@@ -386,16 +411,21 @@ def generate_visualization_config(args: Dict[str, Any], data: Dict[str, Any]) ->
                 }
             })
 
+        # Validate final config has data
+        if chart_type == 'bar' or chart_type == 'line':
+            if not config['xAxis']['data'] or not config['series'][0]['data']:
+                logger.error("Generated config has no data")
+                return None
+        elif chart_type == 'scatter':
+            if not config['series'][0]['data']:
+                logger.error("Generated scatter plot has no data points")
+                return None
+
         return config
 
     except Exception as e:
         logger.exception("Error generating visualization config")
-        return {
-            'title': {'text': 'Error Creating Visualization'},
-            'xAxis': {'type': 'category', 'data': []},
-            'yAxis': {'type': 'value'},
-            'series': [{'type': 'bar', 'data': []}]
-        }
+        return None
 
 def new_gradient_color():
     """Generate a new gradient color scheme"""
