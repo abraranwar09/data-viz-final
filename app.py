@@ -5,7 +5,7 @@ import pandas as pd
 import json
 from utils.data_processor import process_data, chunk_process_data
 from utils.ai_helper import get_ai_insights, get_visualization_configs
-from utils.db_models import db, SharedAnalysis, Comment, Collaborator
+from utils.db_models import db, SharedAnalysis, Comment, Collaborator, get_database_url
 from datetime import datetime, timedelta
 import io
 import secrets
