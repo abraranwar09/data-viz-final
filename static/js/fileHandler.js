@@ -29,6 +29,20 @@ function initializeFileHandlers() {
     });
 }
 
+function addMessage(sender, message) {
+    const chatMessages = document.getElementById('chatMessages');
+    if (!chatMessages) {
+        console.error('Chat messages container not found');
+        return;
+    }
+
+    const messageElement = document.createElement('div');
+    messageElement.classList.add('message', sender);
+    messageElement.textContent = message;
+    chatMessages.appendChild(messageElement);
+    chatMessages.scrollTop = chatMessages.scrollHeight; // Scroll to the bottom
+}
+
 async function handleFile(file) {
     const progressBar = document.querySelector('.progress-bar');
     const progressDiv = document.getElementById('uploadProgress');
@@ -125,9 +139,15 @@ async function handleFile(file) {
                     }
 
                     const result = await analysisResponse.json();
+
+                    // Update visualizations directly
                     if (result?.response?.answer) {
                         addMessage('assistant', result.response.answer);
                     }
+                    if (result?.visualizations) {
+                        updateVisualizations(result.visualizations);
+                    }
+
                 } catch (analysisError) {
                     console.error('Error generating initial analysis:', analysisError);
                     addMessage('error', 'Failed to generate initial analysis');
