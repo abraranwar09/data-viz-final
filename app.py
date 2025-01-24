@@ -4,7 +4,7 @@ from werkzeug.utils import secure_filename
 import pandas as pd
 import json
 from utils.data_processor import process_data, chunk_process_data
-from utils.ai_helper import get_ai_insights
+from utils.ai_helper import get_ai_insights, get_visualization_configs
 from utils.db_models import db, SharedAnalysis, Comment, Collaborator
 from datetime import datetime, timedelta
 import io
@@ -729,11 +729,10 @@ def analyze_data():
             logger.error("Missing required parameters")
             return jsonify({'error': 'Missing required parameters'}), 400
 
-        # Call the function directly since it's no longer async
         response = get_ai_insights(question, context)
         logger.debug(f"AI Response: {json.dumps(response)[:200]}...")
         
-        return jsonify(response)
+        return jsonify({'response': response})
     except Exception as e:
         logger.exception("Error in AI analysis")
         return jsonify({'error': f'Error processing request: {str(e)}'}), 500

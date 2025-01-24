@@ -1,0 +1,172 @@
+import os
+from openai import OpenAI
+from functools import lru_cache
+import json
+import requests
+
+OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
+PERPLEXITY_API_KEY = os.environ.get("PERPLEXITY_API_KEY")
+openai_client = OpenAI(api_key=OPENAI_API_KEY)
+
+@lru_cache(maxsize=100)
+def cached_openai_request(prompt: str) -> str:
+    try:
+        return send_openai_request(prompt)
+    except Exception as e:
+        print(f"Error in cached_openai_request: {str(e)}")
+        return "I'm sorry, but I encountered an error while processing your request. Please try again later."
+
+def send_openai_request(prompt: str) -> str:
+    try:
+        response = openai_client.chat.completions.create(
+            model="gpt-4o",
+            messages=[
+                {"role": "system", "content": "You are a helpful assistant with knowledge about environmental changes and geographical data. If you need up-to-date information, use the search_web function."},
+                {"role": "user", "content": prompt}
+            ],
+            functions=[
+                {
+                    "name": "search_web",
+                    "description": "Search the web for up-to-date information",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "query": {
+                                "type": "string",
+                                "description": "The search query"
+                            }
+                        },
+                        "required": ["query"]
+                    }
+                }
+            ],
+            function_call="auto"
+        )
+        
+        message = response.choices[0].message
+
+        if message.function_call:
+            function_name = message.function_call.name
+            function_args = json.loads(message.function_call.arguments)
+            
+            if function_name == "search_web":
+                search_results = perplexity_web_search(function_args.get("query"))
+                
+                second_response = openai_client.chat.completions.create(
+                    model="gpt-4o",
+                    messages=[
+                        {"role": "system", "content": "You are a helpful assistant. Provide a concise response based on the web search results."},
+                        {"role": "user", "content": prompt},
+                        message,
+                        {
+                            "role": "function",
+                            "name": "search_web",
+                            "content": search_results
+                        }
+                    ]
+                )
+                return second_response.choices[0].message.content
+        
+        return message.content
+    except Exception as e:
+        print(f"Error in send_openai_request: {str(e)}")
+        return "I'm sorry, but I encountered an error while processing your request. Please try again later."
+
+def perplexity_web_search(query: str) -> str:
+    url = "https://api.perplexity.ai/chat/completions"
+    payload = {
+        "model": "llama-3.1-sonar-small-128k-online",
+        "messages": [
+            {
+                "role": "system",
+                "content": "You are a helpful assistant that provides up-to-date information based on web searches."
+            },
+            {
+                "role": "user",
+                "content": f"Search the web and provide a concise summary of the most relevant and up-to-date information for the following query: {query}"
+            }
+        ]
+    }
+    headers = {
+        "accept": "application/json",
+        "content-type": "application/json",
+        "authorization": f"Bearer {PERPLEXITY_API_KEY}"
+    }
+
+    try:
+        response = requests.post(url, json=payload, headers=headers)
+        response.raise_for_status()
+        return response.json()['choices'][0]['message']['content']
+    except Exception as e:
+        print(f"Error in perplexity_web_search: {str(e)}")
+        return f"Error in web search: {str(e)}"
+
+def get_structured_response(prompt: str) -> dict:
+    try:
+        structured_prompt = f"""
+        Provide a response to the following query in a structured JSON format. 
+        The JSON should include relevant keys and values based on the query.
+        If you need to search for up-to-date information, use the search_web function.
+        Query: {prompt}
+        
+        Response (in JSON format):
+        """
+        
+        response = openai_client.chat.completions.create(
+            model="gpt-4o",
+            messages=[
+                {"role": "system", "content": "You are a helpful assistant that provides structured responses in JSON format. If you need up-to-date information, use the search_web function."},
+                {"role": "user", "content": structured_prompt}
+            ],
+            functions=[
+                {
+                    "name": "search_web",
+                    "description": "Search the web for specifics and any up-to-date information",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "query": {
+                                "type": "string",
+                                "description": "The search query"
+                            }
+                        },
+                        "required": ["query"]
+                    }
+                }
+            ],
+            function_call="auto"
+        )
+        
+        message = response.choices[0].message
+        
+        if message.function_call:
+            function_name = message.function_call.name
+            function_args = json.loads(message.function_call.arguments)
+            
+            if function_name == "search_web":
+                search_results = perplexity_web_search(function_args.get("query"))
+                
+                second_response = openai_client.chat.completions.create(
+                    model="gpt-4o",
+                    messages=[
+                        {"role": "system", "content": "You are a helpful assistant that provides structured responses in JSON format based on web search results."},
+                        {"role": "user", "content": structured_prompt},
+                        message,
+                        {
+                            "role": "function",
+                            "name": "search_web",
+                            "content": search_results
+                        }
+                    ]
+                )
+                content = second_response.choices[0].message.content
+        else:
+            content = message.content
+        
+        try:
+            return json.loads(content)
+        except json.JSONDecodeError:
+            return {"error": "Failed to parse JSON response", "raw_content": content}
+    except Exception as e:
+        print(f"Error in get_structured_response: {str(e)}")
+        return {"error": "An error occurred while processing your query", "raw_content": str(e)}
