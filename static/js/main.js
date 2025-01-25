@@ -162,3 +162,84 @@ function showError(message) {
         console.error('Error:', message);
     }
 }
+
+document.addEventListener('DOMContentLoaded', function() {
+    const insights = new StatisticalInsights('statisticalInsights');
+    
+    // File upload handling
+    const fileInput = document.getElementById('fileInput');
+    const dropZone = document.getElementById('dropZone');
+    const errorAlert = document.getElementById('errorAlert');
+    const progressBar = document.querySelector('.progress-bar');
+    const uploadProgress = document.getElementById('uploadProgress');
+    
+    function handleFileUpload(file) {
+        const formData = new FormData();
+        formData.append('file', file);
+        
+        uploadProgress.classList.remove('d-none');
+        progressBar.style.width = '0%';
+        errorAlert.classList.add('d-none');
+        
+        fetch('/upload', {
+            method: 'POST',
+            body: formData
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.error) {
+                throw new Error(data.error);
+            }
+            
+            // Display statistical insights
+            insights.displayInsights(data);
+            
+            // Update data preview
+            updateDataPreview(data);
+            
+            // Generate visualizations
+            generateVisualizations(data);
+            
+            // Enable share button
+            document.getElementById('shareAnalysis').disabled = false;
+        })
+        .catch(error => {
+            errorAlert.textContent = error.message;
+            errorAlert.classList.remove('d-none');
+        })
+        .finally(() => {
+            uploadProgress.classList.add('d-none');
+        });
+    }
+    
+    // File drag and drop handling
+    dropZone.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        dropZone.classList.add('dragover');
+    });
+    
+    dropZone.addEventListener('dragleave', () => {
+        dropZone.classList.remove('dragover');
+    });
+    
+    dropZone.addEventListener('drop', (e) => {
+        e.preventDefault();
+        dropZone.classList.remove('dragover');
+        const file = e.dataTransfer.files[0];
+        handleFileUpload(file);
+    });
+    
+    fileInput.addEventListener('change', (e) => {
+        const file = e.target.files[0];
+        handleFileUpload(file);
+    });
+    
+    // View mode switching
+    document.getElementById('gridViewBtn').addEventListener('click', () => {
+        document.getElementById('visualizationContainer').className = 'visualization-grid';
+    });
+    
+    document.getElementById('singleViewBtn').addEventListener('click', () => {
+        document.getElementById('visualizationContainer').className = 'visualization-single';
+    });
+});

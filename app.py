@@ -5,6 +5,7 @@ import pandas as pd
 import json
 from utils.data_processor import process_data, chunk_process_data
 from utils.ai_helper import get_ai_insights, get_visualization_configs
+from utils.data_insights import DataInsights
 from utils.db_models import db, SharedAnalysis, Comment, Collaborator
 from datetime import datetime, timedelta
 import io
@@ -284,88 +285,55 @@ def share_analysis():
 
 @app.route('/upload', methods=['POST'])
 def upload_file():
-    logger.debug("Received file upload request")
-    if 'file' not in request.files:
-        return jsonify({'error': 'No file was uploaded'}), 400
-    
-    file = request.files['file']
-    if not file or not file.filename:
-        return jsonify({'error': 'No file was selected'}), 400
-    
-    if not allowed_file(file.filename):
-        return jsonify({
-            'error': f'Invalid file type. Allowed types are: {", ".join(ALLOWED_EXTENSIONS)}'
-        }), 400
-    
     try:
-        file_content = file.read()
-        if not file_content:
-            return jsonify({'error': 'The uploaded file is empty'}), 400
-        
-        file_buffer = io.BytesIO(file_content)
-        filename = secure_filename(file.filename)
-        extension = filename.rsplit('.', 1)[1].lower()
-        
+        if 'file' not in request.files:
+            return jsonify({'error': 'No file provided'}), 400
+            
+        file = request.files['file']
+        if file.filename == '':
+            return jsonify({'error': 'No file selected'}), 400
+            
+        if not allowed_file(file.filename):
+            return jsonify({'error': 'File type not allowed'}), 400
+            
+        # Read the file based on its type
         try:
-            logger.debug(f"Processing file with extension: {extension}")
-            if extension in ['csv', 'tsv', 'txt']:
-                # Try different encodings and delimiters
-                try:
-                    df = pd.read_csv(file_buffer, encoding='utf-8')
-                except:
-                    file_buffer.seek(0)
-                    try:
-                        df = pd.read_csv(file_buffer, encoding='latin1')
-                    except:
-                        file_buffer.seek(0)
-                        # Try with explicit delimiter detection
-                        sample = file_content.decode('utf-8', errors='ignore')[:1000]
-                        if ',' in sample:
-                            df = pd.read_csv(file_buffer, sep=',')
-                        elif ';' in sample:
-                            df = pd.read_csv(file_buffer, sep=';')
-                        elif '\t' in sample:
-                            df = pd.read_csv(file_buffer, sep='\t')
-                        else:
-                            raise ValueError("Could not determine file delimiter")
-                
-            elif extension in ['xlsx', 'xls']:
-                df = pd.read_excel(file_buffer)
-            elif extension == 'json':
-                try:
-                    df = pd.read_json(file_buffer)
-                except ValueError:
-                    file_buffer.seek(0)
-                    df = pd.read_json(file_buffer, lines=True)
+            if file.filename.endswith('.csv'):
+                df = pd.read_csv(file)
+            elif file.filename.endswith(('.xls', '.xlsx')):
+                df = pd.read_excel(file)
+            elif file.filename.endswith('.json'):
+                df = pd.read_json(file)
+            elif file.filename.endswith('.tsv'):
+                df = pd.read_csv(file, sep='\t')
+            else:
+                df = pd.read_csv(file, sep=None, engine='python')
+        except Exception as e:
+            return jsonify({'error': f'Error reading file: {str(e)}'}), 400
             
-            if df.empty:
-                return jsonify({'error': 'The file contains no data rows'}), 400
+        # Process data in chunks if it's large
+        if len(df) > CHUNK_SIZE:
+            processed_data = chunk_process_data(df, CHUNK_SIZE)
+        else:
+            processed_data = process_data(df)
             
-            if len(df.columns) == 0:
-                return jsonify({'error': 'The file contains no columns'}), 400
-            
-            logger.debug(f"DataFrame shape: {df.shape}")
-            logger.debug(f"Columns: {df.columns.tolist()}")
-            logger.debug(f"First row: {df.iloc[0].to_dict()}")
-            
-            result = process_data(df)
-            logger.debug("Data processing completed successfully")
-            return jsonify(result)
-            
-        except pd.errors.EmptyDataError:
-            return jsonify({'error': 'The file contains no data'}), 400
-        except pd.errors.ParserError as e:
-            logger.error(f"Parser error: {str(e)}")
-            return jsonify({
-                'error': f'Unable to parse the file. Please check if the format matches the file extension. Details: {str(e)}'
-            }), 400
-        except ValueError as e:
-            logger.error(f"Value error: {str(e)}")
-            return jsonify({'error': f'Invalid file format: {str(e)}'}), 400
-            
+        # Generate statistical insights
+        insights_generator = DataInsights()
+        statistical_insights = insights_generator.generate_insights(df)
+        
+        # Combine processed data with insights
+        response_data = {
+            'processed_data': processed_data,
+            'statistical_insights': statistical_insights,
+            'preview': df.head(5).to_dict('records'),
+            'filename': secure_filename(file.filename)
+        }
+        
+        return jsonify(response_data)
+        
     except Exception as e:
-        logger.exception("Error processing file")
-        return jsonify({'error': f'Error processing file: {str(e)}'}), 500
+        logger.exception("Error in upload_file")
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/visualize', methods=['POST'])
 def visualize():

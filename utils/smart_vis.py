@@ -1,7 +1,7 @@
 from typing import Dict, Any, List, Optional
 import json
 from utils.ai_helper import get_ai_insights
-from utils.data_processor import process_data  # Assuming this exists for data preprocessing
+from utils.data_processor import process_data
 
 class SmartVis:
     """
@@ -26,6 +26,168 @@ class SmartVis:
                 "visualMap": {"type": "object"},
             }
         }
+        
+        # Define common styling for all charts
+        self.common_style = {
+            "backgroundColor": "#1e1e1e",  # Dark background
+            "textStyle": {
+                "color": "#ffffff"  # White text
+            },
+            "title": {
+                "textStyle": {
+                    "color": "#ffffff",
+                    "fontSize": 16,
+                    "fontWeight": "normal"
+                },
+                "left": "center",
+                "top": 10
+            },
+            "tooltip": {
+                "trigger": "axis",
+                "backgroundColor": "rgba(50,50,50,0.9)",
+                "borderColor": "#333",
+                "textStyle": {
+                    "color": "#fff"
+                }
+            },
+            "grid": {
+                "left": "10%",
+                "right": "10%",
+                "top": "15%",
+                "bottom": "15%",
+                "containLabel": True
+            }
+        }
+
+    def _apply_common_style(self, config: Dict[str, Any]) -> Dict[str, Any]:
+        """Apply common styling to a visualization config."""
+        styled_config = {**self.common_style, **config}
+        
+        # Ensure title styling is preserved
+        if "title" in config:
+            styled_config["title"] = {
+                **self.common_style["title"],
+                **config["title"]
+            }
+        
+        # Add axis styling for charts that have axes
+        if "xAxis" in config:
+            styled_config["xAxis"] = {
+                "axisLine": {"lineStyle": {"color": "#666"}},
+                "axisLabel": {"color": "#fff"},
+                "splitLine": {"lineStyle": {"color": "#333"}},
+                **config["xAxis"]
+            }
+        
+        if "yAxis" in config:
+            styled_config["yAxis"] = {
+                "axisLine": {"lineStyle": {"color": "#666"}},
+                "axisLabel": {"color": "#fff"},
+                "splitLine": {"lineStyle": {"color": "#333"}},
+                **config["yAxis"]
+            }
+            
+        return styled_config
+
+    def generate_data_preview(self, data: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """
+        Generate statistical preview visualizations from processed data.
+        
+        Args:
+            data: Processed data dictionary from data_processor
+            
+        Returns:
+            List of visualization configurations
+        """
+        visualizations = []
+        
+        # Dataset Overview
+        overview = {
+            "title": {"text": "Dataset Overview"},
+            "series": [{
+                "type": "gauge",
+                "min": 0,
+                "max": max(data["summary"]["rows"], 100),  # Adjust max based on data
+                "axisLine": {
+                    "lineStyle": {
+                        "color": [[0.3, "#67e0e3"], [0.7, "#37a2da"], [1, "#fd666d"]]
+                    }
+                },
+                "pointer": {"itemStyle": {"color": "auto"}},
+                "axisTick": {"distance": -30, "length": 8, "lineStyle": {"color": "#fff"}},
+                "splitLine": {"distance": -30, "length": 30, "lineStyle": {"color": "#fff"}},
+                "axisLabel": {"color": "#fff", "distance": -40, "fontSize": 12},
+                "detail": {"valueAnimation": True, "color": "#fff"},
+                "data": [
+                    {"value": data["summary"]["rows"], "name": "Total Rows"},
+                    {"value": data["summary"]["columns"], "name": "Total Columns"},
+                    {"value": float(data["summary"]["memory_usage"].split()[0]), "name": "Memory (MB)"}
+                ]
+            }]
+        }
+        visualizations.append(self._apply_common_style(overview))
+        
+        # Data Quality Analysis
+        for col, stats in data["column_stats"].items():
+            if stats["type"] == "numeric":
+                # Distribution plot for numeric columns
+                vis_config = {
+                    "title": {"text": f"Distribution: {col}"},
+                    "xAxis": {"type": "category", "data": ["Mean", "Median", "Std Dev"]},
+                    "yAxis": {"type": "value"},
+                    "series": [{
+                        "type": "bar",
+                        "data": [
+                            {"value": stats["mean"], "itemStyle": {"color": "#37a2da"}},
+                            {"value": stats["median"], "itemStyle": {"color": "#67e0e3"}},
+                            {"value": stats["std"], "itemStyle": {"color": "#fd666d"}}
+                        ],
+                        "label": {
+                            "show": True,
+                            "position": "top",
+                            "color": "#fff",
+                            "formatter": "{c:.2f}"
+                        }
+                    }]
+                }
+                visualizations.append(self._apply_common_style(vis_config))
+            else:
+                # Bar chart for categorical columns
+                categories = list(stats["top_values"].keys())
+                values = list(stats["top_values"].values())
+                vis_config = {
+                    "title": {"text": f"Top Categories: {col}"},
+                    "xAxis": {"type": "category", "data": categories},
+                    "yAxis": {"type": "value"},
+                    "series": [{
+                        "type": "bar",
+                        "data": values,
+                        "itemStyle": {
+                            "color": new_color = {
+                                "type": "linear",
+                                "x": 0,
+                                "y": 0,
+                                "x2": 0,
+                                "y2": 1,
+                                "colorStops": [{
+                                    "offset": 0,
+                                    "color": "#37a2da"
+                                }, {
+                                    "offset": 1,
+                                    "color": "#67e0e3"
+                                }]
+                            }
+                        },
+                        "label": {
+                            "show": True,
+                            "position": "top",
+                            "color": "#fff"
+                        }
+                    }]
+                }
+                visualizations.append(self._apply_common_style(vis_config))
+        
+        return visualizations
 
     def generate_visualization(self, data: Dict[str, Any], query: str = None) -> Dict[str, Any]:
         """
@@ -38,27 +200,26 @@ class SmartVis:
         Returns:
             Dict containing visualization config and metadata
         """
-        # Prepare context for AI analysis
-        context = {
-            "type": "visualization_request",
-            "data": data,
-            "schema": self.echarts_schema
-        }
+        # First generate the statistical preview
+        preview_visualizations = self.generate_data_preview(data)
         
-        # If no specific query provided, generate a general analysis request
-        if not query:
-            query = "Analyze this data and create the most appropriate visualization"
+        # If there's a specific query, generate additional visualizations
+        if query:
+            context = {
+                "type": "visualization_request",
+                "data": data,
+                "schema": self.echarts_schema
+            }
             
-        # Get AI insights with visualization configuration
-        response = get_ai_insights(query, context)
-        
-        # Extract the visualization configuration from the markdown response
-        config = self._extract_config_from_response(response["answer"])
+            response = get_ai_insights(query, context)
+            custom_config = self._extract_config_from_response(response["answer"])
+            
+            if custom_config:
+                preview_visualizations.append(self._apply_common_style(custom_config))
         
         return {
-            "config": config,
-            "explanation": response["answer"],
-            "confidence": response["confidence"]
+            "visualizations": preview_visualizations,
+            "data_summary": data["summary"]
         }
     
     def _extract_config_from_response(self, response: str) -> Optional[Dict[str, Any]]:

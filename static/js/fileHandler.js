@@ -173,32 +173,33 @@ function showError(message) {
 
 function updateDataStats(data) {
     const statsDiv = document.getElementById('dataStats');
-    const summary = data.summary;
+    const insights = data.statistical_insights;
+    const overview = insights.dataset_overview;
     
     statsDiv.innerHTML = `
         <div class="row g-3">
             <div class="col-md-3">
                 <div class="border rounded p-2">
                     <small class="text-muted">Total Rows</small>
-                    <div class="h5 mb-0">${summary.rows.toLocaleString()}</div>
+                    <div class="h5 mb-0">${overview.total_rows.toLocaleString()}</div>
                 </div>
             </div>
             <div class="col-md-3">
                 <div class="border rounded p-2">
                     <small class="text-muted">Total Columns</small>
-                    <div class="h5 mb-0">${summary.columns}</div>
+                    <div class="h5 mb-0">${overview.total_columns}</div>
                 </div>
             </div>
             <div class="col-md-3">
                 <div class="border rounded p-2">
                     <small class="text-muted">Numeric Columns</small>
-                    <div class="h5 mb-0">${summary.numeric_columns}</div>
+                    <div class="h5 mb-0">${overview.column_types.numeric.count}</div>
                 </div>
             </div>
             <div class="col-md-3">
                 <div class="border rounded p-2">
                     <small class="text-muted">Memory Usage</small>
-                    <div class="h5 mb-0">${summary.memory_usage}</div>
+                    <div class="h5 mb-0">${data.processed_data.summary.memory_usage}</div>
                 </div>
             </div>
         </div>

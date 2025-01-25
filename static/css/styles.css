@@ -309,3 +309,148 @@
     width: 3rem;
     height: 3rem;
 }
+
+/* Statistical Insights Styles */
+.insights-container {
+    padding: 1rem;
+}
+
+.stat-box {
+    background: #2a2a2a;
+    border-radius: 8px;
+    padding: 1rem;
+    text-align: center;
+}
+
+.stat-label {
+    color: #a0a0a0;
+    font-size: 0.9rem;
+    margin-bottom: 0.5rem;
+}
+
+.stat-value {
+    color: #fff;
+    font-size: 1.5rem;
+    font-weight: 600;
+}
+
+.column-type-box {
+    background: #2a2a2a;
+    border-radius: 8px;
+    padding: 1rem;
+    text-align: center;
+    flex: 1;
+    margin: 0 0.5rem;
+}
+
+.type-label {
+    color: #a0a0a0;
+    font-size: 0.85rem;
+    margin-bottom: 0.5rem;
+}
+
+.type-count {
+    color: #fff;
+    font-size: 1.2rem;
+    font-weight: 600;
+    margin-bottom: 0.25rem;
+}
+
+.type-percentage {
+    color: #6c757d;
+    font-size: 0.8rem;
+}
+
+.quality-metric {
+    background: #2a2a2a;
+    border-radius: 8px;
+    padding: 1rem;
+    text-align: center;
+}
+
+.metric-label {
+    color: #a0a0a0;
+    font-size: 0.9rem;
+    margin-bottom: 0.5rem;
+}
+
+.metric-value {
+    font-size: 1.5rem;
+    font-weight: 600;
+    margin-bottom: 0.25rem;
+}
+
+.metric-value.excellent {
+    color: #28a745;
+}
+
+.metric-value.good {
+    color: #ffc107;
+}
+
+.metric-value.poor {
+    color: #dc3545;
+}
+
+.metric-rating {
+    font-size: 0.8rem;
+    color: #6c757d;
+}
+
+.column-stats {
+    background: #2a2a2a;
+    border-radius: 8px;
+    padding: 1.5rem;
+    margin-bottom: 1rem;
+}
+
+.stats-header {
+    color: #fff;
+    margin-bottom: 1rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid #404040;
+}
+
+.stats-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 1rem;
+}
+
+.stat-item {
+    background: #333;
+    padding: 0.75rem;
+    border-radius: 6px;
+    display: flex;
+    flex-direction: column;
+}
+
+.key-insights {
+    background: #333;
+    border-radius: 6px;
+    padding: 1rem;
+}
+
+.insight-item {
+    color: #fff;
+    padding: 0.5rem;
+    margin-bottom: 0.5rem;
+    border-left: 3px solid #ffc107;
+    background: #2a2a2a;
+    border-radius: 0 4px 4px 0;
+}
+
+.insight-item i {
+    color: #ffc107;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+    .stats-grid {
+        grid-template-columns: 1fr;
+    }
+    
+    .column-type-box {
+        margin: 0.5rem 0;
+    }
+}
