@@ -5,7 +5,7 @@ import pandas as pd
 import json
 from utils.data_processor import process_data, chunk_process_data
 from utils.ai_helper import get_ai_insights, get_visualization_configs
-from utils.db_models import db, SharedAnalysis, Comment, Collaborator
+from utils.db_models import db, SharedAnalysis, Comment, Collaborator, get_database_url
 from datetime import datetime, timedelta
 import io
 import secrets
@@ -20,11 +20,28 @@ logger = logging.getLogger('app')
 app = Flask(__name__)
 app.secret_key = os.environ.get('FLASK_SECRET_KEY', 'dev-secret-key')
 app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024  # 50MB max file size
-app.config['SQLALCHEMY_DATABASE_URI'] = os.environ['DATABASE_URL']
+app.config['SQLALCHEMY_DATABASE_URI'] = get_database_url()
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
-# Initialize database
-db.init_app(app)
+# Initialize database with retry
+def init_db_with_retry(retries=3, delay=2):
+    """Initialize database with retry mechanism"""
+    for attempt in range(retries):
+        try:
+            db.init_app(app)
+            with app.app_context():
+                db.create_all()
+            logger.info("Database initialized successfully")
+            return True
+        except Exception as e:
+            if attempt < retries - 1:
+                logger.warning(f"Database initialization attempt {attempt + 1} failed: {str(e)}")
+                time.sleep(delay)
+            else:
+                logger.error(f"Database initialization failed after {retries} attempts: {str(e)}")
+                raise
+
+init_db_with_retry()
 
 def init_database():
     """Initialize database with schema version tracking."""

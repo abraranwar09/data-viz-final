@@ -1,8 +1,15 @@
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime
 import uuid
+import os
 
 db = SQLAlchemy()
+
+def get_database_url():
+    """Get database URL based on environment"""
+    if os.environ.get('USE_SQLITE', 'true').lower() == 'true':
+        return 'sqlite:///app.db'
+    return os.environ.get('DATABASE_URL', 'sqlite:///app.db')
 
 def generate_share_id():
     return str(uuid.uuid4())[:8]
