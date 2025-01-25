@@ -181,3 +181,152 @@ function showError(message) {
         errorAlert.classList.remove('d-none');
     }
 }
+
+// Function to generate visualizations from data
+async function generateVisualizations(data) {
+    try {
+        log('Generating visualizations for data:', data);
+        
+        if (!data || !data.processed_data || !data.statistical_insights) {
+            throw new Error('Invalid data format');
+        }
+
+        const insights = data.statistical_insights;
+        const processedData = data.processed_data;
+        const configs = [];
+
+        // Add overview visualization
+        configs.push({
+            title: { text: 'Dataset Overview' },
+            tooltip: { trigger: 'item' },
+            series: [{
+                type: 'pie',
+                radius: ['40%', '70%'],
+                avoidLabelOverlap: false,
+                itemStyle: {
+                    borderRadius: 10,
+                    borderColor: '#fff',
+                    borderWidth: 2
+                },
+                label: {
+                    show: true,
+                    formatter: '{b}: {c} ({d}%)'
+                },
+                emphasis: {
+                    label: {
+                        show: true,
+                        fontSize: '16',
+                        fontWeight: 'bold'
+                    }
+                },
+                data: [
+                    {
+                        value: insights.dataset_overview.column_types.numeric.count,
+                        name: 'Numeric',
+                        itemStyle: { color: '#37a2da' }
+                    },
+                    {
+                        value: insights.dataset_overview.column_types.categorical.count,
+                        name: 'Categorical',
+                        itemStyle: { color: '#67e0e3' }
+                    },
+                    {
+                        value: insights.dataset_overview.column_types.datetime.count,
+                        name: 'DateTime',
+                        itemStyle: { color: '#fd666d' }
+                    },
+                    {
+                        value: insights.dataset_overview.column_types.other.count,
+                        name: 'Other',
+                        itemStyle: { color: '#ffdb5c' }
+                    }
+                ]
+            }]
+        });
+
+        // Add visualizations for numeric columns
+        for (const [column, stats] of Object.entries(insights.columns)) {
+            // Distribution visualization
+            configs.push({
+                title: { text: `Distribution of ${column}` },
+                tooltip: { trigger: 'axis' },
+                grid: { containLabel: true },
+                xAxis: {
+                    type: 'category',
+                    data: ['Mean', 'Median', 'Std Dev'],
+                    axisLabel: { rotate: 30 }
+                },
+                yAxis: { type: 'value' },
+                series: [{
+                    type: 'bar',
+                    data: [
+                        {
+                            value: stats.statistics.mean,
+                            itemStyle: { color: '#37a2da' }
+                        },
+                        {
+                            value: stats.statistics.median,
+                            itemStyle: { color: '#67e0e3' }
+                        },
+                        {
+                            value: stats.statistics.std,
+                            itemStyle: { color: '#fd666d' }
+                        }
+                    ],
+                    label: {
+                        show: true,
+                        position: 'top',
+                        formatter: '{c:.2f}'
+                    }
+                }]
+            });
+        }
+
+        // Add data quality visualization
+        const quality = insights.data_quality;
+        configs.push({
+            title: { text: 'Data Quality Metrics' },
+            tooltip: { trigger: 'axis' },
+            grid: { containLabel: true },
+            xAxis: {
+                type: 'category',
+                data: ['Completeness', 'Uniqueness', 'Consistency'],
+                axisLabel: { rotate: 30 }
+            },
+            yAxis: {
+                type: 'value',
+                max: 100,
+                axisLabel: { formatter: '{value}%' }
+            },
+            series: [{
+                type: 'bar',
+                data: [
+                    {
+                        value: parseFloat(quality.completeness.score),
+                        itemStyle: { color: quality.completeness.rating === 'Excellent' ? '#28a745' : '#ffc107' }
+                    },
+                    {
+                        value: parseFloat(quality.uniqueness.score),
+                        itemStyle: { color: quality.uniqueness.rating === 'Excellent' ? '#28a745' : '#ffc107' }
+                    },
+                    {
+                        value: parseFloat(quality.consistency.score),
+                        itemStyle: { color: quality.consistency.rating === 'Excellent' ? '#28a745' : '#ffc107' }
+                    }
+                ],
+                label: {
+                    show: true,
+                    position: 'top',
+                    formatter: '{c}%'
+                }
+            }]
+        });
+
+        // Update visualizations with the generated configs
+        await updateVisualizations(configs);
+        
+    } catch (error) {
+        logError('Error generating visualizations:', error);
+        showError('Failed to generate visualizations: ' + error.message);
+    }
+}

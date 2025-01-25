@@ -195,7 +195,7 @@ document.addEventListener('DOMContentLoaded', function() {
             insights.displayInsights(data);
             
             // Update data preview
-            updateDataPreview(data);
+            updatePreviewTable(data);
             
             // Generate visualizations
             generateVisualizations(data);
