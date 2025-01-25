@@ -12,19 +12,33 @@ import secrets
 from sqlalchemy import text
 import sys
 import logging
+from dotenv import load_dotenv
 
 # Set up logging
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger('app')
 
+# Load environment variables
+load_dotenv()
+
 app = Flask(__name__)
 app.secret_key = os.environ.get('FLASK_SECRET_KEY', 'dev-secret-key')
 app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024  # 50MB max file size
-# Use SQLite as fallback if DATABASE_URL is not available or if USE_SQLITE is true
-if os.environ.get('USE_SQLITE', 'false').lower() == 'true' or not os.environ.get('DATABASE_URL'):
+
+# Database configuration with debug logging
+use_sqlite = os.environ.get('USE_SQLITE', 'false').lower() == 'true'
+database_url = os.environ.get('DATABASE_URL')
+
+logger.debug(f"USE_SQLITE: {use_sqlite}")
+logger.debug(f"DATABASE_URL: {database_url if database_url else 'Not set'}")
+
+if use_sqlite or not database_url:
+    logger.info("Using SQLite database")
     app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///app.db'
 else:
-    app.config['SQLALCHEMY_DATABASE_URI'] = os.environ['DATABASE_URL']
+    logger.info("Using PostgreSQL database")
+    app.config['SQLALCHEMY_DATABASE_URI'] = database_url
+
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 # Initialize database
@@ -34,6 +48,8 @@ def init_database():
     """Initialize database with schema version tracking."""
     try:
         with app.app_context():
+            logger.info("Starting database initialization")
+            
             # Create schema_version table if it doesn't exist
             db.session.execute(text("""
                 CREATE TABLE IF NOT EXISTS schema_version (
@@ -47,10 +63,14 @@ def init_database():
             current_version = result.scalar()
             target_version = 1  # Increment this when making schema changes
             
+            logger.debug(f"Current schema version: {current_version}, Target version: {target_version}")
+            
             if not current_version or current_version < target_version:
+                logger.info(f"Upgrading database schema from version {current_version} to {target_version}")
                 # Apply migrations
                 try:
                     db.create_all()
+                    logger.info("Created all database tables")
                     
                     # Add missing columns if needed
                     for column in ['last_modified', 'is_public', 'password']:
@@ -59,8 +79,11 @@ def init_database():
                                 ALTER TABLE shared_analysis
                                 ADD COLUMN IF NOT EXISTS {column} {get_column_type(column)}
                             """))
+                            logger.debug(f"Added or verified column: {column}")
                         except Exception as e:
-                            print(f"Error adding column {column}: {str(e)}")
+                            logger.error(f"Error adding column {column}: {str(e)}")
+                            if not use_sqlite:  # Re-raise for PostgreSQL, continue for SQLite
+                                raise
                     
                     # Update schema version
                     db.session.execute(
@@ -69,14 +92,17 @@ def init_database():
                     )
                     db.session.commit()
                     
-                    print(f"Database schema updated to version {target_version}")
+                    logger.info(f"Database schema updated to version {target_version}")
                 except Exception as e:
-                    print(f"Error updating database schema: {str(e)}")
+                    logger.error(f"Error updating database schema: {str(e)}")
                     db.session.rollback()
                     raise
     except Exception as e:
-        print(f"Database initialization error: {str(e)}")
-        sys.exit(1)
+        logger.error(f"Database initialization error: {str(e)}")
+        if not use_sqlite:  # Only exit if using PostgreSQL
+            sys.exit(1)
+        else:
+            logger.warning("Continuing with SQLite despite initialization error")
 
 def get_column_type(column_name):
     """Get SQL type for a column."""
@@ -386,6 +412,19 @@ def generate_default_visualizations(processed_data):
     """Generate default visualizations based on processed data"""
     visualizations = []
     
+    # Multiline chart
+    if processed_data.get('multiline'):
+        multiline_config = {
+            'title': {'text': 'Time Series Analysis'},
+            'tooltip': processed_data['multiline']['tooltip'],
+            'legend': processed_data['multiline']['legend'],
+            'grid': {'left': '3%', 'right': '4%', 'bottom': '3%', 'containLabel': True},
+            'xAxis': processed_data['multiline']['xAxis'],
+            'yAxis': processed_data['multiline']['yAxis'],
+            'series': processed_data['multiline']['series']
+        }
+        visualizations.append(multiline_config)
+    
     # Histogram
     if processed_data.get('histogram'):
         visualizations.append({
@@ -498,6 +537,14 @@ def processData(data):
     # Initialize results
     results = {}
     
+    # Get multiline chart data
+    multiline = prepareMultilineData(data)
+    if multiline:
+        logger.debug("Generated multiline chart data")
+        results['multiline'] = multiline
+    else:
+        logger.debug("Failed to generate multiline chart")
+    
     # Get histogram data
     histogram = prepareHistogramData(data)
     if histogram:
@@ -533,7 +580,78 @@ def processData(data):
     logger.debug(f"Generated {len(results)} visualizations")
     return results
 
-# Add these functions after the processData function and before the /ai/analyze route
+def prepareMultilineData(data):
+    """Prepare multiline chart data from the uploaded dataset"""
+    try:
+        if not data or 'column_stats' not in data:
+            return None
+            
+        # Find numeric columns for y-axis values
+        numeric_cols = [
+            col for col, stats in data['column_stats'].items() 
+            if stats.get('type') == 'numeric'
+        ]
+        
+        if len(numeric_cols) < 1:
+            return None
+            
+        # Find a suitable x-axis column (datetime or numeric)
+        x_col = next(
+            (col for col, stats in data['column_stats'].items()
+             if stats.get('type') in ['datetime', 'numeric']),
+            None
+        )
+        
+        if not x_col:
+            return None
+            
+        # Prepare series data
+        series = []
+        for y_col in numeric_cols[:5]:  # Limit to 5 lines for readability
+            values = [
+                [row[x_col], row[y_col]]
+                for row in data['preview']
+                if row[x_col] is not None and row[y_col] is not None
+            ]
+            if values:
+                series.append({
+                    'name': y_col,
+                    'type': 'line',
+                    'data': values,
+                    'smooth': True,
+                    'emphasis': {
+                        'focus': 'series'
+                    }
+                })
+        
+        if not series:
+            return None
+            
+        return {
+            'xAxis': {
+                'type': 'value' if data['column_stats'][x_col]['type'] == 'numeric' else 'time',
+                'name': x_col
+            },
+            'yAxis': {
+                'type': 'value'
+            },
+            'series': series,
+            'tooltip': {
+                'trigger': 'axis',
+                'axisPointer': {
+                    'type': 'cross',
+                    'label': {
+                        'backgroundColor': '#6a7985'
+                    }
+                }
+            },
+            'legend': {
+                'data': [s['name'] for s in series]
+            }
+        }
+    except Exception as e:
+        logger.error(f"Error preparing multiline data: {str(e)}")
+        return None
 
 def prepareHistogramData(data):
     """Prepare histogram data from the uploaded dataset"""
