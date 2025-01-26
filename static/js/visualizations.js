@@ -1,7 +1,7 @@
 let chartInstances = [];
 let pinnedCharts = [];
 const MAX_PINNED_CHARTS = 2;
-const MAX_CHARTS = 4; // Maximum number of charts to show at once
+const MAX_CHARTS = 6; // Updated to 6 as requested
 const DEBUG = true;
 
 // Add missing logging functions
@@ -15,6 +15,34 @@ function logError(...args) {
     console.error('[Visualization Error]', ...args);
 }
 
+// Update chart layout based on count
+function updateChartLayout() {
+    const container = document.getElementById('visualizationContainer');
+    const totalCharts = chartInstances.length;
+    
+    // Update data-charts attribute to trigger CSS grid changes
+    container.setAttribute('data-charts', totalCharts.toString());
+    
+    // Resize all charts to fit their containers
+    chartInstances.forEach(({chart}) => {
+        if (chart) {
+            setTimeout(() => chart.resize(), 100); // Delay resize to ensure container has updated
+        }
+    });
+    
+    // Update pinned charts layout
+    const pinnedContainer = document.querySelector('.pinned-graphs');
+    if (pinnedContainer) {
+        const pinnedHeight = pinnedCharts.length > 0 ? pinnedContainer.offsetHeight : 0;
+        document.documentElement.style.setProperty('--pinned-height', `${pinnedHeight}px`);
+        pinnedCharts.forEach(({chart}) => {
+            if (chart) {
+                setTimeout(() => chart.resize(), 100);
+            }
+        });
+    }
+}
+
 // Add initialization function
 async function initializeCharts() {
     log('Initializing charts system');
@@ -22,9 +50,11 @@ async function initializeCharts() {
     try {
         // Initialize containers
         const container = document.getElementById('visualizationContainer');
-        const pinnedContainer = document.createElement('div');
+        const pinnedContainer = document.querySelector('.pinned-graphs') || document.createElement('div');
         pinnedContainer.className = 'pinned-graphs';
-        container.parentElement.insertBefore(pinnedContainer, container);
+        if (!pinnedContainer.parentElement) {
+            container.parentElement.insertBefore(pinnedContainer, container);
+        }
         
         if (!container) {
             throw new Error('Visualization container not found');
@@ -39,17 +69,23 @@ async function initializeCharts() {
             }
         });
 
-        // Set up resize handler
+        // Set up resize handler with debounce
+        let resizeTimeout;
         window.addEventListener('resize', () => {
-            chartInstances.forEach(({chart}) => chart.resize());
-            pinnedCharts.forEach(({chart}) => chart.resize());
+            clearTimeout(resizeTimeout);
+            resizeTimeout = setTimeout(() => {
+                updateChartLayout();
+            }, 250);
         });
 
+        // Initial layout update
+        updateChartLayout();
+        
         log('Charts system initialized successfully');
         return true;
     } catch (error) {
-        logError('Error initializing charts:', error);
-        throw error;
+        logError('Failed to initialize charts system:', error);
+        return false;
     }
 }
 
@@ -94,9 +130,9 @@ async function updateVisualizations(configs) {
             const numToRemove = configs.length;
             const chartsToRemove = chartInstances.slice(0, numToRemove);
             chartsToRemove.forEach(({chart, container, resizeObserver}) => {
-                resizeObserver.disconnect();
-                chart.dispose();
-                container.remove();
+                if (resizeObserver) resizeObserver.disconnect();
+                if (chart) chart.dispose();
+                if (container) container.remove();
             });
             chartInstances = chartInstances.slice(numToRemove);
         }
@@ -105,12 +141,10 @@ async function updateVisualizations(configs) {
         for (const config of configs) {
             log('Creating chart with config:', config);
             
-            const chartDiv = document.createElement('div');
-            chartDiv.className = 'chart-container';
-            chartDiv.id = `chart_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-            container.appendChild(chartDiv);
-
             try {
+                const { container: chartDiv, downloadBtn, pinBtn } = createChartContainer();
+                container.appendChild(chartDiv);
+
                 const chart = echarts.init(chartDiv, null, {
                     renderer: 'canvas',
                     useDirtyRect: true
@@ -122,15 +156,64 @@ async function updateVisualizations(configs) {
                 resizeObserver.observe(chartDiv);
 
                 chart.setOption(config);
+                
+                // Set up download handler
+                downloadBtn.addEventListener('click', async () => {
+                    try {
+                        downloadBtn.disabled = true;
+                        downloadBtn.innerHTML = '<i class="bi bi-hourglass-split"></i>';
+                        
+                        const dataURL = chart.getDataURL({
+                            type: 'png',
+                            pixelRatio: 2,
+                            backgroundColor: '#ffffff',
+                            excludeComponents: ['toolbox']
+                        });
+                        
+                        const title = config.title?.text || 'chart';
+                        const sanitizedTitle = title.toLowerCase().replace(/[^a-z0-9]/g, '_');
+                        const filename = `${sanitizedTitle}_${Date.now()}.png`;
+                        
+                        const link = document.createElement('a');
+                        link.download = filename;
+                        link.href = dataURL;
+                        document.body.appendChild(link);
+                        link.click();
+                        document.body.removeChild(link);
+                        
+                        downloadBtn.innerHTML = '<i class="bi bi-check-lg"></i>';
+                        setTimeout(() => {
+                            downloadBtn.innerHTML = '<i class="bi bi-download"></i>';
+                            downloadBtn.disabled = false;
+                        }, 1000);
+                    } catch (error) {
+                        logError('Error downloading chart:', error);
+                        showError('Failed to download chart');
+                        downloadBtn.innerHTML = '<i class="bi bi-download"></i>';
+                        downloadBtn.disabled = false;
+                    }
+                });
+
+                // Set up pin handler
+                pinBtn.addEventListener('click', () => {
+                    if (pinBtn.classList.contains('pinned')) {
+                        unpinChart({ chart, container: chartDiv, config });
+                        pinBtn.classList.remove('pinned');
+                    } else {
+                        pinChart({ chart, container: chartDiv, config });
+                        pinBtn.classList.add('pinned');
+                    }
+                    updatePinnedGraphsLayout();
+                });
+
                 chartInstances.push({ chart, container: chartDiv, resizeObserver });
                 log('Chart created successfully');
             } catch (error) {
                 logError('Error creating chart:', error);
-                chartDiv.innerHTML = `
-                    <div class="alert alert-danger">
-                        Failed to create visualization: ${error.message}
-                    </div>
-                `;
+                const errorDiv = document.createElement('div');
+                errorDiv.className = 'alert alert-danger';
+                errorDiv.innerHTML = `Failed to create visualization: ${error.message}`;
+                container.appendChild(errorDiv);
             }
         }
 
@@ -404,16 +487,19 @@ function createChartContainer() {
     
     const actions = document.createElement('div');
     actions.className = 'chart-actions';
+    actions.style.zIndex = '100'; // Ensure actions are above the chart
     
     // Download button
     const downloadBtn = document.createElement('button');
     downloadBtn.className = 'chart-action-btn';
+    downloadBtn.type = 'button'; // Explicitly set button type
     downloadBtn.innerHTML = '<i class="bi bi-download"></i>';
     downloadBtn.title = 'Download Chart';
     
     // Pin button
     const pinBtn = document.createElement('button');
     pinBtn.className = 'chart-action-btn';
+    pinBtn.type = 'button'; // Explicitly set button type
     pinBtn.innerHTML = '<i class="bi bi-pin"></i>';
     pinBtn.title = 'Pin Chart';
     
@@ -493,20 +579,46 @@ function addChart(chartConfig) {
     const chartInstance = { chart, container, config: chartConfig };
     chartInstances.push(chartInstance);
     
-    // Set up download handler with error handling
+    // Enhanced download handler with high quality export
     downloadBtn.addEventListener('click', async () => {
         try {
+            // Show loading state on button
+            downloadBtn.disabled = true;
+            downloadBtn.innerHTML = '<i class="bi bi-hourglass-split"></i>';
+            
+            // Get high quality PNG with 2x pixel ratio
             const dataURL = chart.getDataURL({
                 type: 'png',
-                pixelRatio: window.devicePixelRatio || 2
+                pixelRatio: 2, // Force 2x pixel ratio for high quality
+                backgroundColor: '#ffffff', // Ensure white background
+                excludeComponents: ['toolbox'] // Exclude UI components from export
             });
+            
+            // Create filename based on chart title
+            const title = chartConfig.title?.text || 'chart';
+            const sanitizedTitle = title.toLowerCase().replace(/[^a-z0-9]/g, '_');
+            const filename = `${sanitizedTitle}_${Date.now()}.png`;
+            
+            // Trigger download
             const link = document.createElement('a');
-            link.download = `chart_${Date.now()}.png`;
+            link.download = filename;
             link.href = dataURL;
+            document.body.appendChild(link);
             link.click();
+            document.body.removeChild(link);
+            
+            // Show success state briefly
+            downloadBtn.innerHTML = '<i class="bi bi-check-lg"></i>';
+            setTimeout(() => {
+                downloadBtn.innerHTML = '<i class="bi bi-download"></i>';
+                downloadBtn.disabled = false;
+            }, 1000);
         } catch (error) {
             logError('Error downloading chart:', error);
             showError('Failed to download chart');
+            // Reset button state
+            downloadBtn.innerHTML = '<i class="bi bi-download"></i>';
+            downloadBtn.disabled = false;
         }
     });
     

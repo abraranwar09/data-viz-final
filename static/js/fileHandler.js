@@ -91,10 +91,15 @@ async function handleFile(file) {
         // Handle response
         xhr.onload = async function() {
             try {
-                const response = JSON.parse(xhr.responseText);
+                let response;
+                try {
+                    response = JSON.parse(xhr.responseText);
+                } catch (parseError) {
+                    throw new Error(`Error parsing server response: ${parseError.message}`);
+                }
                 
                 if (xhr.status !== 200) {
-                    throw new Error(response.error || 'Upload failed');
+                    throw new Error(response?.error || 'Upload failed');
                 }
 
                 // Update application state
