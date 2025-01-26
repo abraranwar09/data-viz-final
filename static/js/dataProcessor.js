@@ -5,21 +5,41 @@ function processData(data) {
     }
 
     try {
+        // Get column types from cleaned data
+        const categoricalColumns = Object.entries(data.column_stats)
+            .filter(([_, stats]) => stats.type === 'categorical')
+            .map(([col, _]) => col);
+
         const numericColumns = Object.entries(data.column_stats)
             .filter(([_, stats]) => stats.type === 'numeric')
             .map(([col, _]) => col);
 
-        if (numericColumns.length < 1) {
-            console.warn('No numeric columns found in data');
-            return null;
+        let processedData = {};
+
+        // Handle categorical data
+        if (categoricalColumns.length > 0) {
+            const catData = prepareCategoricalData(data, categoricalColumns);
+            if (catData) {
+                processedData.categorical = catData;
+            }
         }
 
-        return {
-            histogram: prepareHistogramData(data, numericColumns[0]),
-            scatter: prepareScatterData(data, numericColumns[0], numericColumns[1]),
-            boxplot: prepareBoxplotData(data, numericColumns),
-            heatmap: prepareHeatmapData(data, numericColumns)
-        };
+        // Handle numeric data
+        if (numericColumns.length > 0) {
+            const numericData = {
+                histogram: prepareHistogramData(data, numericColumns[0]),
+                scatter: prepareScatterData(data, numericColumns[0], numericColumns[1]),
+                boxplot: prepareBoxplotData(data, numericColumns),
+                heatmap: prepareHeatmapData(data, numericColumns)
+            };
+
+            // Only add numeric data if at least one visualization was created
+            if (Object.values(numericData).some(v => v !== null)) {
+                processedData = { ...processedData, ...numericData };
+            }
+        }
+
+        return processedData;
     } catch (error) {
         console.error('Error processing data:', error);
         return null;
@@ -185,6 +205,48 @@ function calculateCorrelation(x, y) {
         return denominator === 0 ? 0 : numerator / denominator;
     } catch (error) {
         console.error('Error calculating correlation:', error);
+        return null;
+    }
+}
+
+function prepareCategoricalData(data, columns) {
+    if (!columns || !columns.length || !data.preview || !data.preview.length) {
+        return null;
+    }
+
+    try {
+        const result = {};
+        
+        for (const column of columns) {
+            // Count frequency of each category
+            const frequencies = {};
+            data.preview.forEach(row => {
+                const value = row[column];
+                if (value !== null && value !== undefined) {
+                    frequencies[value] = (frequencies[value] || 0) + 1;
+                }
+            });
+
+            // Only include if we have valid frequencies
+            if (Object.keys(frequencies).length > 0) {
+                // Sort categories by frequency
+                const sortedCategories = Object.entries(frequencies)
+                    .sort(([,a], [,b]) => b - a)
+                    .reduce((obj, [key, value]) => {
+                        obj[key] = value;
+                        return obj;
+                    }, {});
+
+                result[column] = {
+                    frequencies: sortedCategories,
+                    total: Object.values(frequencies).reduce((a, b) => a + b, 0)
+                };
+            }
+        }
+
+        return Object.keys(result).length > 0 ? result : null;
+    } catch (error) {
+        console.error('Error preparing categorical data:', error);
         return null;
     }
 }

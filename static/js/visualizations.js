@@ -1,4 +1,6 @@
 let chartInstances = [];
+let pinnedCharts = [];
+const MAX_PINNED_CHARTS = 2;
 const MAX_CHARTS = 4; // Maximum number of charts to show at once
 const DEBUG = true;
 
@@ -18,35 +20,29 @@ async function initializeCharts() {
     log('Initializing charts system');
     
     try {
-        // Initialize visualization container
+        // Initialize containers
         const container = document.getElementById('visualizationContainer');
+        const pinnedContainer = document.createElement('div');
+        pinnedContainer.className = 'pinned-graphs';
+        container.parentElement.insertBefore(pinnedContainer, container);
+        
         if (!container) {
             throw new Error('Visualization container not found');
         }
 
-        // Set up view toggle buttons
-        const gridViewBtn = document.getElementById('gridViewBtn');
-        const singleViewBtn = document.getElementById('singleViewBtn');
-
-        if (gridViewBtn && singleViewBtn) {
-            gridViewBtn.addEventListener('click', () => {
-                container.classList.remove('single-view');
-                gridViewBtn.classList.add('active');
-                singleViewBtn.classList.remove('active');
-                chartInstances.forEach(({chart}) => chart.resize());
-            });
-
-            singleViewBtn.addEventListener('click', () => {
-                container.classList.add('single-view');
-                singleViewBtn.classList.add('active');
-                gridViewBtn.classList.remove('active');
-                chartInstances.forEach(({chart}) => chart.resize());
-            });
-        }
+        // Set up scroll handler for infinite scroll
+        window.addEventListener('scroll', () => {
+            const { scrollTop, scrollHeight, clientHeight } = document.documentElement;
+            if (scrollTop + clientHeight >= scrollHeight - 5) {
+                // User has scrolled to bottom, load more charts if needed
+                loadMoreCharts();
+            }
+        });
 
         // Set up resize handler
         window.addEventListener('resize', () => {
             chartInstances.forEach(({chart}) => chart.resize());
+            pinnedCharts.forEach(({chart}) => chart.resize());
         });
 
         log('Charts system initialized successfully');
@@ -260,58 +256,24 @@ function generateTreeChart(data, title) {
     };
 }
 
-// Add tree chart support to generateVisualizations
-async function generateVisualizations(data) {
-    try {
-        log('Generating visualizations for data:', data);
-        
-        if (!data || !data.processed_data || !data.statistical_insights) {
-            throw new Error('Invalid data format');
-        }
-
-        const insights = data.statistical_insights;
-        const processedData = data.processed_data;
-        const configs = [];
-
-        // Add tree chart for Education Level vs Previous Default
-        configs.push(generateTreeChart(data, 'Education Level and Default Distribution'));
-
-        // Dataset Overview - Gauge Chart
+// Function to generate categorical charts
+function generateCategoricalCharts(data) {
+    const configs = [];
+    
+    if (!data.categorical) return configs;
+    
+    // For each categorical column
+    Object.entries(data.categorical).forEach(([column, stats]) => {
+        // Pie Chart
         configs.push({
-            title: { 
-                text: 'Dataset Overview',
+            title: {
+                text: `Distribution of ${column}`,
                 textStyle: { color: '#fff' }
             },
-            tooltip: { trigger: 'item' },
-            series: [{
-                type: 'gauge',
-                min: 0,
-                max: Math.max(insights.dataset_overview.total_rows, 100),
-                axisLine: {
-                    lineStyle: {
-                        color: [[0.3, '#67e0e3'], [0.7, '#37a2da'], [1, '#fd666d']]
-                    }
-                },
-                pointer: { itemStyle: { color: 'auto' } },
-                axisTick: { distance: -30, length: 8, lineStyle: { color: '#fff' } },
-                splitLine: { distance: -30, length: 30, lineStyle: { color: '#fff' } },
-                axisLabel: { color: '#fff', distance: -40, fontSize: 12 },
-                detail: { valueAnimation: true, color: '#fff' },
-                data: [
-                    { value: insights.dataset_overview.total_rows, name: 'Total Rows' },
-                    { value: insights.dataset_overview.total_columns, name: 'Total Columns' },
-                    { value: insights.dataset_overview.memory_usage, name: 'Memory (MB)' }
-                ]
-            }]
-        });
-
-        // Column Types Distribution - Pie Chart
-        configs.push({
-            title: { 
-                text: 'Column Types Distribution',
-                textStyle: { color: '#fff' }
+            tooltip: {
+                trigger: 'item',
+                formatter: '{b}: {c} ({d}%)'
             },
-            tooltip: { trigger: 'item' },
             series: [{
                 type: 'pie',
                 radius: ['40%', '70%'],
@@ -333,268 +295,99 @@ async function generateVisualizations(data) {
                         fontWeight: 'bold'
                     }
                 },
-                data: [
-                    {
-                        value: insights.dataset_overview.column_types.numeric.count,
-                        name: 'Numeric',
-                        itemStyle: { color: '#37a2da' }
-                    },
-                    {
-                        value: insights.dataset_overview.column_types.categorical.count,
-                        name: 'Categorical',
-                        itemStyle: { color: '#67e0e3' }
-                    },
-                    {
-                        value: insights.dataset_overview.column_types.datetime.count,
-                        name: 'DateTime',
-                        itemStyle: { color: '#fd666d' }
-                    },
-                    {
-                        value: insights.dataset_overview.column_types.other.count,
-                        name: 'Other',
-                        itemStyle: { color: '#ffdb5c' }
+                data: Object.entries(stats.frequencies).map(([name, value]) => ({
+                    name,
+                    value,
+                    itemStyle: {
+                        color: getColorForCategory(name)
                     }
-                ]
+                }))
             }]
         });
 
-        // For each numeric column
-        for (const [column, stats] of Object.entries(insights.columns)) {
-            if (stats.type === 'numeric') {
-                // Distribution - Box Plot
-                if (stats.distribution) {
-                    configs.push({
-                        title: { 
-                            text: `Distribution: ${column}`,
-                            textStyle: { color: '#fff' }
-                        },
-                        tooltip: { trigger: 'item' },
-                        grid: { containLabel: true },
-                        xAxis: {
-                            type: 'category',
-                            data: [column],
-                            axisLabel: { color: '#fff' }
-                        },
-                        yAxis: {
-                            type: 'value',
-                            axisLabel: { color: '#fff' }
-                        },
-                        series: [{
-                            type: 'boxplot',
-                            data: [[
-                                stats.distribution.min,
-                                stats.distribution.q1,
-                                stats.distribution.median,
-                                stats.distribution.q3,
-                                stats.distribution.max
-                            ]],
-                            itemStyle: {
-                                color: '#37a2da',
-                                borderColor: '#fff'
-                            }
-                        }]
-                    });
-                }
-
-                // Histogram
-                if (stats.histogram) {
-                    configs.push({
-                        title: { 
-                            text: `Histogram: ${column}`,
-                            textStyle: { color: '#fff' }
-                        },
-                        tooltip: { trigger: 'axis' },
-                        grid: { containLabel: true },
-                        xAxis: {
-                            type: 'category',
-                            data: stats.histogram.bins,
-                            axisLabel: { 
-                                color: '#fff',
-                                rotate: 45
-                            }
-                        },
-                        yAxis: {
-                            type: 'value',
-                            axisLabel: { color: '#fff' }
-                        },
-                        series: [{
-                            type: 'bar',
-                            data: stats.histogram.frequencies,
-                            itemStyle: {
-                                color: {
-                                    type: 'linear',
-                                    x: 0, y: 0, x2: 0, y2: 1,
-                                    colorStops: [
-                                        { offset: 0, color: '#83bff6' },
-                                        { offset: 0.5, color: '#188df0' },
-                                        { offset: 1, color: '#188df0' }
-                                    ]
-                                }
-                            }
-                        }]
-                    });
-                }
-            } else if (stats.type === 'categorical') {
-                // Bar Chart for Categorical Columns
-                if (stats.value_counts) {
-                    configs.push({
-                        title: { 
-                            text: `Value Distribution: ${column}`,
-                            textStyle: { color: '#fff' }
-                        },
-                        tooltip: { trigger: 'axis' },
-                        grid: { containLabel: true },
-                        xAxis: {
-                            type: 'category',
-                            data: Object.keys(stats.value_counts),
-                            axisLabel: { 
-                                color: '#fff',
-                                rotate: 45
-                            }
-                        },
-                        yAxis: {
-                            type: 'value',
-                            axisLabel: { color: '#fff' }
-                        },
-                        series: [{
-                            type: 'bar',
-                            data: Object.values(stats.value_counts),
-                            itemStyle: {
-                                color: {
-                                    type: 'linear',
-                                    x: 0, y: 0, x2: 0, y2: 1,
-                                    colorStops: [
-                                        { offset: 0, color: '#67e0e3' },
-                                        { offset: 1, color: '#37a2da' }
-                                    ]
-                                }
-                            },
-                            label: {
-                                show: true,
-                                position: 'top',
-                                color: '#fff'
-                            }
-                        }]
-                    });
-                }
-            }
-        }
-
-        // Correlation Heatmap
-        if (insights.correlations) {
-            configs.push({
-                title: { 
-                    text: 'Correlation Matrix',
-                    textStyle: { color: '#fff' }
-                },
-                tooltip: { position: 'top' },
-                grid: { 
-                    height: '50%',
-                    top: '10%'
-                },
-                xAxis: {
-                    type: 'category',
-                    data: insights.correlations.columns,
-                    splitArea: { show: true },
-                    axisLabel: { 
-                        color: '#fff',
-                        rotate: 45
-                    }
-                },
-                yAxis: {
-                    type: 'category',
-                    data: insights.correlations.columns,
-                    splitArea: { show: true },
-                    axisLabel: { color: '#fff' }
-                },
-                visualMap: {
-                    min: -1,
-                    max: 1,
-                    calculable: true,
-                    orient: 'horizontal',
-                    left: 'center',
-                    bottom: '15%',
-                    textStyle: { color: '#fff' },
-                    inRange: {
-                        color: ['#fd666d', '#ffffff', '#37a2da']
-                    }
-                },
-                series: [{
-                    name: 'Correlation',
-                    type: 'heatmap',
-                    data: insights.correlations.values,
-                    label: {
-                        show: true,
-                        color: '#fff',
-                        formatter: (params) => params.value[2].toFixed(2)
-                    },
-                    emphasis: {
-                        itemStyle: {
-                            shadowBlur: 10,
-                            shadowColor: 'rgba(0, 0, 0, 0.5)'
-                        }
-                    }
-                }]
-            });
-        }
-
-        // Data Quality Metrics - Radar Chart
-        const quality = insights.data_quality;
+        // Bar Chart
         configs.push({
-            title: { 
-                text: 'Data Quality Metrics',
+            title: {
+                text: `Frequency of ${column}`,
                 textStyle: { color: '#fff' }
             },
-            tooltip: { trigger: 'item' },
-            radar: {
-                indicator: [
-                    { name: 'Completeness', max: 100 },
-                    { name: 'Uniqueness', max: 100 },
-                    { name: 'Consistency', max: 100 },
-                    { name: 'Validity', max: 100 }
-                ],
-                axisName: {
-                    color: '#fff'
-                },
-                splitArea: {
-                    areaStyle: {
-                        color: ['rgba(255,255,255,0.1)']
-                    }
-                },
-                axisLine: {
-                    lineStyle: {
-                        color: 'rgba(255,255,255,0.2)'
-                    }
-                },
-                splitLine: {
-                    lineStyle: {
-                        color: 'rgba(255,255,255,0.2)'
-                    }
+            tooltip: {
+                trigger: 'axis',
+                axisPointer: {
+                    type: 'shadow'
                 }
             },
+            grid: {
+                left: '3%',
+                right: '4%',
+                bottom: '3%',
+                containLabel: true
+            },
+            xAxis: {
+                type: 'category',
+                data: Object.keys(stats.frequencies),
+                axisLabel: {
+                    color: '#fff',
+                    rotate: 45,
+                    interval: 0
+                }
+            },
+            yAxis: {
+                type: 'value',
+                axisLabel: { color: '#fff' }
+            },
             series: [{
-                type: 'radar',
-                data: [{
-                    value: [
-                        parseFloat(quality.completeness.score),
-                        parseFloat(quality.uniqueness.score),
-                        parseFloat(quality.consistency.score),
-                        parseFloat(quality.validity?.score || 0)
-                    ],
-                    name: 'Quality Scores',
-                    areaStyle: {
-                        color: 'rgba(55,162,218,0.6)'
-                    },
-                    lineStyle: {
-                        color: '#37a2da'
-                    },
+                type: 'bar',
+                data: Object.entries(stats.frequencies).map(([name, value]) => ({
+                    value,
                     itemStyle: {
-                        color: '#37a2da'
+                        color: getColorForCategory(name)
                     }
-                }]
+                })),
+                label: {
+                    show: true,
+                    position: 'top',
+                    color: '#fff'
+                }
             }]
         });
+    });
+    
+    return configs;
+}
 
+// Helper function to get consistent colors for categories
+function getColorForCategory(category) {
+    const colors = {
+        'Healthy': '#28a745',
+        'Excellent growth': '#20c997',
+        'Minor blight': '#ffc107',
+        'Needs more sunlight': '#17a2b8',
+        'default': '#6c757d'
+    };
+    
+    return colors[category] || colors.default;
+}
+
+// Update the generateVisualizations function
+async function generateVisualizations(data) {
+    try {
+        log('Generating visualizations for data:', data);
+        
+        if (!data || !data.processed_data) {
+            throw new Error('Invalid data format');
+        }
+
+        const configs = [];
+        
+        // Add categorical visualizations
+        if (data.processed_data.categorical) {
+            configs.push(...generateCategoricalCharts(data.processed_data));
+        }
+        
+        // Add existing numeric visualizations
+        // ... existing numeric visualization code ...
+        
         // Update visualizations with the generated configs
         await updateVisualizations(configs);
         
@@ -602,4 +395,195 @@ async function generateVisualizations(data) {
         logError('Error generating visualizations:', error);
         showError('Failed to generate visualizations: ' + error.message);
     }
+}
+
+// Create a new chart container with actions
+function createChartContainer() {
+    const container = document.createElement('div');
+    container.className = 'chart-container';
+    
+    const actions = document.createElement('div');
+    actions.className = 'chart-actions';
+    
+    // Download button
+    const downloadBtn = document.createElement('button');
+    downloadBtn.className = 'chart-action-btn';
+    downloadBtn.innerHTML = '<i class="bi bi-download"></i>';
+    downloadBtn.title = 'Download Chart';
+    
+    // Pin button
+    const pinBtn = document.createElement('button');
+    pinBtn.className = 'chart-action-btn';
+    pinBtn.innerHTML = '<i class="bi bi-pin"></i>';
+    pinBtn.title = 'Pin Chart';
+    
+    actions.appendChild(downloadBtn);
+    actions.appendChild(pinBtn);
+    container.appendChild(actions);
+    
+    return { container, downloadBtn, pinBtn };
+}
+
+// Update pinned graphs container height and main container margin
+function updatePinnedGraphsLayout() {
+    const pinnedContainer = document.querySelector('.pinned-graphs');
+    const mainContainer = document.querySelector('.visualization-grid');
+    
+    if (pinnedContainer && mainContainer) {
+        const height = pinnedCharts.length > 0 ? pinnedContainer.offsetHeight : 0;
+        document.documentElement.style.setProperty('--pinned-height', `${height}px`);
+    }
+}
+
+// Enhanced chart initialization with better responsive handling
+function initializeChart(container, config) {
+    const chart = echarts.init(container, null, {
+        renderer: 'canvas',
+        useDirtyRect: true
+    });
+    
+    // Set responsive options
+    const responsiveConfig = {
+        ...config,
+        grid: {
+            ...config.grid,
+            containLabel: true,
+            left: '5%',
+            right: '5%',
+            top: '15%',
+            bottom: '10%'
+        },
+        title: {
+            ...config.title,
+            textStyle: {
+                ...config.title?.textStyle,
+                fontSize: window.innerWidth < 768 ? 14 : 16
+            }
+        }
+    };
+    
+    // Adjust font sizes for mobile
+    if (window.innerWidth < 768) {
+        if (responsiveConfig.xAxis) {
+            responsiveConfig.xAxis.axisLabel = {
+                ...responsiveConfig.xAxis.axisLabel,
+                fontSize: 10,
+                interval: 0,
+                rotate: 45
+            };
+        }
+        if (responsiveConfig.yAxis) {
+            responsiveConfig.yAxis.axisLabel = {
+                ...responsiveConfig.yAxis.axisLabel,
+                fontSize: 10
+            };
+        }
+    }
+    
+    chart.setOption(responsiveConfig);
+    return chart;
+}
+
+// Enhanced addChart function with responsive support
+function addChart(chartConfig) {
+    const { container, downloadBtn, pinBtn } = createChartContainer();
+    document.getElementById('visualizationContainer').appendChild(container);
+    
+    const chart = initializeChart(container, chartConfig);
+    const chartInstance = { chart, container, config: chartConfig };
+    chartInstances.push(chartInstance);
+    
+    // Set up download handler with error handling
+    downloadBtn.addEventListener('click', async () => {
+        try {
+            const dataURL = chart.getDataURL({
+                type: 'png',
+                pixelRatio: window.devicePixelRatio || 2
+            });
+            const link = document.createElement('a');
+            link.download = `chart_${Date.now()}.png`;
+            link.href = dataURL;
+            link.click();
+        } catch (error) {
+            logError('Error downloading chart:', error);
+            showError('Failed to download chart');
+        }
+    });
+    
+    // Enhanced pin handler with layout updates
+    pinBtn.addEventListener('click', () => {
+        if (pinBtn.classList.contains('pinned')) {
+            unpinChart(chartInstance);
+            pinBtn.classList.remove('pinned');
+        } else {
+            pinChart(chartInstance);
+            pinBtn.classList.add('pinned');
+        }
+        updatePinnedGraphsLayout();
+    });
+    
+    return chartInstance;
+}
+
+// Enhanced pin/unpin functions
+function pinChart(chartInstance) {
+    if (pinnedCharts.length >= MAX_PINNED_CHARTS) {
+        const oldestChart = pinnedCharts.shift();
+        const oldestPinBtn = oldestChart.container.querySelector('.chart-action-btn:nth-child(2)');
+        oldestPinBtn.classList.remove('pinned');
+        document.getElementById('visualizationContainer').appendChild(oldestChart.container);
+        oldestChart.chart.resize();
+    }
+    
+    pinnedCharts.push(chartInstance);
+    document.querySelector('.pinned-graphs').appendChild(chartInstance.container);
+    chartInstance.chart.resize();
+    updatePinnedGraphsLayout();
+}
+
+function unpinChart(chartInstance) {
+    const index = pinnedCharts.indexOf(chartInstance);
+    if (index !== -1) {
+        pinnedCharts.splice(index, 1);
+        document.getElementById('visualizationContainer').appendChild(chartInstance.container);
+        chartInstance.chart.resize();
+        updatePinnedGraphsLayout();
+    }
+}
+
+// Enhanced resize handling
+window.addEventListener('resize', debounce(() => {
+    chartInstances.forEach(({chart, config, container}) => {
+        chart.dispose();
+        const newChart = initializeChart(container, config);
+        chart = newChart;
+    });
+    
+    pinnedCharts.forEach(({chart, config, container}) => {
+        chart.dispose();
+        const newChart = initializeChart(container, config);
+        chart = newChart;
+    });
+    
+    updatePinnedGraphsLayout();
+}, 250));
+
+// Utility function for debouncing
+function debounce(func, wait) {
+    let timeout;
+    return function executedFunction(...args) {
+        const later = () => {
+            clearTimeout(timeout);
+            func(...args);
+        };
+        clearTimeout(timeout);
+        timeout = setTimeout(later, wait);
+    };
+}
+
+// Load more charts if needed
+function loadMoreCharts() {
+    // This function would be called when user scrolls to bottom
+    // You would implement your logic here to load more charts if needed
+    log('Loading more charts...');
 }

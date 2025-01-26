@@ -191,14 +191,14 @@ document.addEventListener('DOMContentLoaded', function() {
                 throw new Error(data.error);
             }
             
+            // Process and visualize data
+            processUploadedData(data);
+            
             // Display statistical insights
             insights.displayInsights(data);
             
             // Update data preview
             updatePreviewTable(data);
-            
-            // Generate visualizations
-            generateVisualizations(data);
             
             // Enable share button
             document.getElementById('shareAnalysis').disabled = false;
@@ -243,3 +243,45 @@ document.addEventListener('DOMContentLoaded', function() {
         document.getElementById('visualizationContainer').className = 'visualization-single';
     });
 });
+
+function processUploadedData(data) {
+    try {
+        // Clean up the data structure
+        const cleanData = {
+            ...data,
+            preview: data.preview.map(row => {
+                // Remove the ```csv wrapper if it exists
+                const cleanRow = {};
+                Object.entries(row).forEach(([key, value]) => {
+                    const cleanKey = key.replace('```csv', '').trim();
+                    cleanRow[cleanKey] = value;
+                });
+                return cleanRow;
+            }),
+            column_stats: Object.entries(data.processed_data.column_stats).reduce((acc, [key, value]) => {
+                const cleanKey = key.replace('```csv', '').trim();
+                acc[cleanKey] = value;
+                return acc;
+            }, {})
+        };
+
+        // Store clean data in app state
+        window.appState.currentData = cleanData;
+
+        // Process the cleaned data
+        const processedData = processData(cleanData);
+        
+        if (processedData) {
+            // Generate visualizations with both processed data and insights
+            generateVisualizations({
+                processed_data: processedData,
+                statistical_insights: data.statistical_insights
+            });
+        } else {
+            showError('Failed to process data');
+        }
+    } catch (error) {
+        console.error('Error processing uploaded data:', error);
+        showError('Error processing data: ' + error.message);
+    }
+}

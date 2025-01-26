@@ -237,26 +237,98 @@
     display: none !important;
 }
 
-/* Visualization Container Styles */
+/* Visualization Grid System */
 .visualization-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 400px), 1fr));
     gap: 1rem;
+    padding: 1rem;
+    margin-top: calc(60px + var(--pinned-height, 0px));
+    transition: margin-top 0.3s ease;
+}
+
+.pinned-graphs {
+    position: fixed;
+    top: 60px;
+    left: 0;
+    right: 0;
+    background: var(--bs-dark);
+    z-index: 1000;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 400px), 1fr));
+    gap: 1rem;
+    padding: 1rem;
+    border-bottom: 1px solid var(--bs-border-color);
+    transition: height 0.3s ease;
+}
+
+.chart-container {
+    position: relative;
+    background-color: var(--bs-dark);
+    border-radius: 5px;
+    padding: 1rem;
+    height: clamp(300px, 50vh, 600px);
+    margin-bottom: 1rem;
     transition: all 0.3s ease;
 }
 
-.visualization-grid.single-view {
-    grid-template-columns: 1fr;
+/* Responsive Chart Actions */
+.chart-actions {
+    position: absolute;
+    top: 0.5rem;
+    right: 0.5rem;
+    display: flex;
+    gap: 0.5rem;
+    opacity: 1; /* Always visible on mobile */
+    transition: opacity 0.2s ease;
+    background: rgba(var(--bs-dark-rgb), 0.8);
+    padding: 0.25rem;
+    border-radius: 4px;
 }
 
 /* Responsive adjustments */
-@media (max-width: 768px) {
-    .visualization-grid {
-        grid-template-columns: 1fr;
+@media (min-width: 769px) {
+    .chart-actions {
+        opacity: 0;
     }
     
+    .chart-container:hover .chart-actions {
+        opacity: 1;
+    }
+}
+
+@media (max-width: 768px) {
+    .visualization-grid {
+        gap: 0.5rem;
+        padding: 0.5rem;
+    }
+
+    .pinned-graphs {
+        gap: 0.5rem;
+        padding: 0.5rem;
+    }
+
     .chart-container {
-        min-height: 300px;
+        height: clamp(250px, 40vh, 400px);
+        padding: 0.5rem;
+    }
+
+    .chart-action-btn {
+        padding: 0.5rem;
+        font-size: 1.2rem;
+    }
+}
+
+@media (max-width: 480px) {
+    .chart-container {
+        height: clamp(200px, 35vh, 300px);
+    }
+}
+
+/* Touch device optimizations */
+@media (hover: none) {
+    .chart-actions {
+        opacity: 1;
     }
 }
 
