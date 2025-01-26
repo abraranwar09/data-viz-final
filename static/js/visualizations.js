@@ -195,9 +195,41 @@ async function generateVisualizations(data) {
         const processedData = data.processed_data;
         const configs = [];
 
-        // Add overview visualization
+        // Dataset Overview - Gauge Chart
         configs.push({
-            title: { text: 'Dataset Overview' },
+            title: { 
+                text: 'Dataset Overview',
+                textStyle: { color: '#fff' }
+            },
+            tooltip: { trigger: 'item' },
+            series: [{
+                type: 'gauge',
+                min: 0,
+                max: Math.max(insights.dataset_overview.total_rows, 100),
+                axisLine: {
+                    lineStyle: {
+                        color: [[0.3, '#67e0e3'], [0.7, '#37a2da'], [1, '#fd666d']]
+                    }
+                },
+                pointer: { itemStyle: { color: 'auto' } },
+                axisTick: { distance: -30, length: 8, lineStyle: { color: '#fff' } },
+                splitLine: { distance: -30, length: 30, lineStyle: { color: '#fff' } },
+                axisLabel: { color: '#fff', distance: -40, fontSize: 12 },
+                detail: { valueAnimation: true, color: '#fff' },
+                data: [
+                    { value: insights.dataset_overview.total_rows, name: 'Total Rows' },
+                    { value: insights.dataset_overview.total_columns, name: 'Total Columns' },
+                    { value: insights.dataset_overview.memory_usage, name: 'Memory (MB)' }
+                ]
+            }]
+        });
+
+        // Column Types Distribution - Pie Chart
+        configs.push({
+            title: { 
+                text: 'Column Types Distribution',
+                textStyle: { color: '#fff' }
+            },
             tooltip: { trigger: 'item' },
             series: [{
                 type: 'pie',
@@ -210,7 +242,8 @@ async function generateVisualizations(data) {
                 },
                 label: {
                     show: true,
-                    formatter: '{b}: {c} ({d}%)'
+                    formatter: '{b}: {c} ({d}%)',
+                    color: '#fff'
                 },
                 emphasis: {
                     label: {
@@ -244,81 +277,240 @@ async function generateVisualizations(data) {
             }]
         });
 
-        // Add visualizations for numeric columns
+        // For each numeric column
         for (const [column, stats] of Object.entries(insights.columns)) {
-            // Distribution visualization
+            if (stats.type === 'numeric') {
+                // Distribution - Box Plot
+                if (stats.distribution) {
+                    configs.push({
+                        title: { 
+                            text: `Distribution: ${column}`,
+                            textStyle: { color: '#fff' }
+                        },
+                        tooltip: { trigger: 'item' },
+                        grid: { containLabel: true },
+                        xAxis: {
+                            type: 'category',
+                            data: [column],
+                            axisLabel: { color: '#fff' }
+                        },
+                        yAxis: {
+                            type: 'value',
+                            axisLabel: { color: '#fff' }
+                        },
+                        series: [{
+                            type: 'boxplot',
+                            data: [[
+                                stats.distribution.min,
+                                stats.distribution.q1,
+                                stats.distribution.median,
+                                stats.distribution.q3,
+                                stats.distribution.max
+                            ]],
+                            itemStyle: {
+                                color: '#37a2da',
+                                borderColor: '#fff'
+                            }
+                        }]
+                    });
+                }
+
+                // Histogram
+                if (stats.histogram) {
+                    configs.push({
+                        title: { 
+                            text: `Histogram: ${column}`,
+                            textStyle: { color: '#fff' }
+                        },
+                        tooltip: { trigger: 'axis' },
+                        grid: { containLabel: true },
+                        xAxis: {
+                            type: 'category',
+                            data: stats.histogram.bins,
+                            axisLabel: { 
+                                color: '#fff',
+                                rotate: 45
+                            }
+                        },
+                        yAxis: {
+                            type: 'value',
+                            axisLabel: { color: '#fff' }
+                        },
+                        series: [{
+                            type: 'bar',
+                            data: stats.histogram.frequencies,
+                            itemStyle: {
+                                color: {
+                                    type: 'linear',
+                                    x: 0, y: 0, x2: 0, y2: 1,
+                                    colorStops: [
+                                        { offset: 0, color: '#83bff6' },
+                                        { offset: 0.5, color: '#188df0' },
+                                        { offset: 1, color: '#188df0' }
+                                    ]
+                                }
+                            }
+                        }]
+                    });
+                }
+            } else if (stats.type === 'categorical') {
+                // Bar Chart for Categorical Columns
+                if (stats.value_counts) {
+                    configs.push({
+                        title: { 
+                            text: `Value Distribution: ${column}`,
+                            textStyle: { color: '#fff' }
+                        },
+                        tooltip: { trigger: 'axis' },
+                        grid: { containLabel: true },
+                        xAxis: {
+                            type: 'category',
+                            data: Object.keys(stats.value_counts),
+                            axisLabel: { 
+                                color: '#fff',
+                                rotate: 45
+                            }
+                        },
+                        yAxis: {
+                            type: 'value',
+                            axisLabel: { color: '#fff' }
+                        },
+                        series: [{
+                            type: 'bar',
+                            data: Object.values(stats.value_counts),
+                            itemStyle: {
+                                color: {
+                                    type: 'linear',
+                                    x: 0, y: 0, x2: 0, y2: 1,
+                                    colorStops: [
+                                        { offset: 0, color: '#67e0e3' },
+                                        { offset: 1, color: '#37a2da' }
+                                    ]
+                                }
+                            },
+                            label: {
+                                show: true,
+                                position: 'top',
+                                color: '#fff'
+                            }
+                        }]
+                    });
+                }
+            }
+        }
+
+        // Correlation Heatmap
+        if (insights.correlations) {
             configs.push({
-                title: { text: `Distribution of ${column}` },
-                tooltip: { trigger: 'axis' },
-                grid: { containLabel: true },
+                title: { 
+                    text: 'Correlation Matrix',
+                    textStyle: { color: '#fff' }
+                },
+                tooltip: { position: 'top' },
+                grid: { 
+                    height: '50%',
+                    top: '10%'
+                },
                 xAxis: {
                     type: 'category',
-                    data: ['Mean', 'Median', 'Std Dev'],
-                    axisLabel: { rotate: 30 }
+                    data: insights.correlations.columns,
+                    splitArea: { show: true },
+                    axisLabel: { 
+                        color: '#fff',
+                        rotate: 45
+                    }
                 },
-                yAxis: { type: 'value' },
+                yAxis: {
+                    type: 'category',
+                    data: insights.correlations.columns,
+                    splitArea: { show: true },
+                    axisLabel: { color: '#fff' }
+                },
+                visualMap: {
+                    min: -1,
+                    max: 1,
+                    calculable: true,
+                    orient: 'horizontal',
+                    left: 'center',
+                    bottom: '15%',
+                    textStyle: { color: '#fff' },
+                    inRange: {
+                        color: ['#fd666d', '#ffffff', '#37a2da']
+                    }
+                },
                 series: [{
-                    type: 'bar',
-                    data: [
-                        {
-                            value: stats.statistics.mean,
-                            itemStyle: { color: '#37a2da' }
-                        },
-                        {
-                            value: stats.statistics.median,
-                            itemStyle: { color: '#67e0e3' }
-                        },
-                        {
-                            value: stats.statistics.std,
-                            itemStyle: { color: '#fd666d' }
-                        }
-                    ],
+                    name: 'Correlation',
+                    type: 'heatmap',
+                    data: insights.correlations.values,
                     label: {
                         show: true,
-                        position: 'top',
-                        formatter: '{c:.2f}'
+                        color: '#fff',
+                        formatter: (params) => params.value[2].toFixed(2)
+                    },
+                    emphasis: {
+                        itemStyle: {
+                            shadowBlur: 10,
+                            shadowColor: 'rgba(0, 0, 0, 0.5)'
+                        }
                     }
                 }]
             });
         }
 
-        // Add data quality visualization
+        // Data Quality Metrics - Radar Chart
         const quality = insights.data_quality;
         configs.push({
-            title: { text: 'Data Quality Metrics' },
-            tooltip: { trigger: 'axis' },
-            grid: { containLabel: true },
-            xAxis: {
-                type: 'category',
-                data: ['Completeness', 'Uniqueness', 'Consistency'],
-                axisLabel: { rotate: 30 }
+            title: { 
+                text: 'Data Quality Metrics',
+                textStyle: { color: '#fff' }
             },
-            yAxis: {
-                type: 'value',
-                max: 100,
-                axisLabel: { formatter: '{value}%' }
+            tooltip: { trigger: 'item' },
+            radar: {
+                indicator: [
+                    { name: 'Completeness', max: 100 },
+                    { name: 'Uniqueness', max: 100 },
+                    { name: 'Consistency', max: 100 },
+                    { name: 'Validity', max: 100 }
+                ],
+                axisName: {
+                    color: '#fff'
+                },
+                splitArea: {
+                    areaStyle: {
+                        color: ['rgba(255,255,255,0.1)']
+                    }
+                },
+                axisLine: {
+                    lineStyle: {
+                        color: 'rgba(255,255,255,0.2)'
+                    }
+                },
+                splitLine: {
+                    lineStyle: {
+                        color: 'rgba(255,255,255,0.2)'
+                    }
+                }
             },
             series: [{
-                type: 'bar',
-                data: [
-                    {
-                        value: parseFloat(quality.completeness.score),
-                        itemStyle: { color: quality.completeness.rating === 'Excellent' ? '#28a745' : '#ffc107' }
+                type: 'radar',
+                data: [{
+                    value: [
+                        parseFloat(quality.completeness.score),
+                        parseFloat(quality.uniqueness.score),
+                        parseFloat(quality.consistency.score),
+                        parseFloat(quality.validity?.score || 0)
+                    ],
+                    name: 'Quality Scores',
+                    areaStyle: {
+                        color: 'rgba(55,162,218,0.6)'
                     },
-                    {
-                        value: parseFloat(quality.uniqueness.score),
-                        itemStyle: { color: quality.uniqueness.rating === 'Excellent' ? '#28a745' : '#ffc107' }
+                    lineStyle: {
+                        color: '#37a2da'
                     },
-                    {
-                        value: parseFloat(quality.consistency.score),
-                        itemStyle: { color: quality.consistency.rating === 'Excellent' ? '#28a745' : '#ffc107' }
+                    itemStyle: {
+                        color: '#37a2da'
                     }
-                ],
-                label: {
-                    show: true,
-                    position: 'top',
-                    formatter: '{c}%'
-                }
+                }]
             }]
         });
 
