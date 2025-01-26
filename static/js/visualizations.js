@@ -182,7 +182,85 @@ function showError(message) {
     }
 }
 
-// Function to generate visualizations from data
+// Function to generate tree chart configuration
+function generateTreeChart(data, title) {
+    // Transform data into hierarchical structure
+    function transformData(data, parentField, childField) {
+        const result = [];
+        const valueMap = {};
+        
+        // First pass: Count values
+        data.forEach(row => {
+            const parentVal = row[parentField];
+            const childVal = row[childField];
+            
+            if (!valueMap[parentVal]) {
+                valueMap[parentVal] = {};
+            }
+            if (!valueMap[parentVal][childVal]) {
+                valueMap[parentVal][childVal] = 0;
+            }
+            valueMap[parentVal][childVal]++;
+        });
+        
+        // Second pass: Create hierarchical structure
+        Object.entries(valueMap).forEach(([parent, children]) => {
+            const parentNode = {
+                name: parent,
+                value: Object.values(children).reduce((a, b) => a + b, 0),
+                children: Object.entries(children).map(([child, value]) => ({
+                    name: child,
+                    value: value
+                }))
+            };
+            result.push(parentNode);
+        });
+        
+        return result;
+    }
+
+    const treeData = transformData(data.preview, 'Education Level', 'Previous Default');
+    
+    return {
+        title: {
+            text: title,
+            textStyle: { color: '#fff' }
+        },
+        tooltip: {
+            formatter: function(info) {
+                const value = info.value;
+                const name = info.name;
+                return `${name}: ${value} records`;
+            }
+        },
+        series: [{
+            type: 'treemap',
+            data: treeData,
+            leafDepth: 1,
+            levels: [{
+                itemStyle: {
+                    borderColor: '#fff',
+                    borderWidth: 2,
+                    gapWidth: 2
+                }
+            }, {
+                colorSaturation: [0.3, 0.6],
+                itemStyle: {
+                    borderColor: '#fff',
+                    borderWidth: 1,
+                    gapWidth: 1
+                }
+            }],
+            label: {
+                show: true,
+                formatter: '{b}: {c}',
+                color: '#fff'
+            }
+        }]
+    };
+}
+
+// Add tree chart support to generateVisualizations
 async function generateVisualizations(data) {
     try {
         log('Generating visualizations for data:', data);
@@ -194,6 +272,9 @@ async function generateVisualizations(data) {
         const insights = data.statistical_insights;
         const processedData = data.processed_data;
         const configs = [];
+
+        // Add tree chart for Education Level vs Previous Default
+        configs.push(generateTreeChart(data, 'Education Level and Default Distribution'));
 
         // Dataset Overview - Gauge Chart
         configs.push({
