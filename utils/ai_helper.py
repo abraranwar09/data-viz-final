@@ -186,44 +186,75 @@ def get_ai_insights(question: str, context: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def prepare_data_context(context: Dict[str, Any]) -> Dict[str, Any]:
-    """Prepare and validate data context for visualization."""
+    """Prepare and validate data context for visualization with enhanced error handling."""
+    logger.debug("Starting data context preparation")
+    
     try:
-        # Extract column information
-        numeric_cols = [
-            col for col, stats in context.get('column_stats', {}).items()
-            if stats.get('type') == 'numeric'
-        ]
-        categorical_cols = [
-            col for col, stats in context.get('column_stats', {}).items()
-            if stats.get('type') == 'categorical'
-        ]
-        time_cols = [
-            col for col in context.get('columns', [])
-            if any(t in col.lower() for t in ['time', 'date', 'year', 'month', 'day'])
-        ]
+        # Validate input context
+        if not isinstance(context, dict):
+            logger.error("Invalid context format provided")
+            return {"success": False, "error": "Invalid data format"}
 
-        # Validate minimum data requirements
-        if not context.get('preview') or not context.get('columns'):
-            return {
-                "success": False,
-                "error": "No data available for visualization"
-            }
+        # Extract and validate columns with proper logging
+        column_stats = context.get('column_stats', {})
+        preview_data = context.get('preview', [])
+        
+        if not column_stats:
+            logger.error("No column statistics found in context")
+            return {"success": False, "error": "Missing column statistics"}
+            
+        if not preview_data:
+            logger.error("No preview data found in context")
+            return {"success": False, "error": "Missing preview data"}
 
+        # Extract column information with validation
+        numeric_cols = []
+        categorical_cols = []
+        time_cols = []
+        
+        for col, stats in column_stats.items():
+            if not isinstance(stats, dict):
+                logger.warning(f"Invalid statistics format for column {col}")
+                continue
+                
+            col_type = stats.get('type')
+            if col_type == 'numeric':
+                numeric_cols.append(col)
+            elif col_type == 'categorical':
+                categorical_cols.append(col)
+                
+            # Check for temporal columns
+            if any(t in col.lower() for t in ['time', 'date', 'year', 'month', 'day']):
+                time_cols.append(col)
+
+        logger.debug(f"Found {len(numeric_cols)} numeric, {len(categorical_cols)} categorical, and {len(time_cols)} temporal columns")
+
+        # Validate data availability for visualization
         if not numeric_cols and not categorical_cols:
+            logger.error("No valid columns found for visualization")
             return {
                 "success": False,
-                "error": "No numeric or categorical columns found for visualization"
+                "error": "No numeric or categorical data available for visualization"
             }
 
-        # Prepare the context
+        # Prepare enhanced context with metadata
         data_context = {
             "numeric_columns": numeric_cols,
             "categorical_columns": categorical_cols,
             "time_columns": time_cols,
-            "total_rows": context.get('summary', {}).get('rows', 0),
-            "column_stats": context.get('column_stats', {}),
-            "preview": context.get('preview', []),
-            "columns": context.get('columns', []),
+            "total_rows": len(preview_data),
+            "column_stats": {
+                col: stats for col, stats in column_stats.items()
+                if isinstance(stats, dict)
+            },
+            "preview": preview_data[:10],  # Limit preview data
+            "columns": list(column_stats.keys()),
+            "metadata": {
+                "numeric_count": len(numeric_cols),
+                "categorical_count": len(categorical_cols),
+                "temporal_count": len(time_cols),
+                "total_columns": len(column_stats)
+            },
             "available_chart_types": [
                 "bar", "line", "scatter", "pie", "boxplot", "heatmap",
                 "treemap", "sunburst", "gauge", "funnel", "candlestick",
@@ -231,16 +262,17 @@ def prepare_data_context(context: Dict[str, Any]) -> Dict[str, Any]:
             ]
         }
 
+        logger.debug("Data context preparation completed successfully")
         return {
             "success": True,
             "data": data_context
         }
 
     except Exception as e:
-        logger.error(f"Error preparing data context: {str(e)}")
+        logger.exception("Critical error preparing data context")
         return {
             "success": False,
-            "error": f"Error preparing data context: {str(e)}"
+            "error": f"Failed to prepare data context: {str(e)}"
         }
 
 
