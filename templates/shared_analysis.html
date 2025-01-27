@@ -134,26 +134,187 @@
         </div>
     </div>
 
+    <div id="visualizationContainer" class="mt-3">
+        <!-- Chart root element(s) will be dynamically injected here -->
+    </div>
+
     <script src="/static/js/dataProcessor.js"></script>
     <script src="/static/js/visualizations.js"></script>
     <script>
-        document.addEventListener('DOMContentLoaded', () => {
-            const analysisData = {{ analysis.data | tojson | safe }};
-            const shareId = "{{ analysis.share_id }}";
+        // Add generateVisualizations function
+        async function generateVisualizations(data) {
+            if (!data) return [];
             
-            // Initialize charts
-            initializeCharts();
+            const configs = [];
             
-            // Update UI with the shared data
-            updateDataStats(analysisData);
-            updatePreviewTable(analysisData.preview);
-            updateVisualizations(analysisData);
+            // Add histogram for numeric columns
+            if (data.histogram) {
+                configs.push({
+                    title: { text: 'Distribution' },
+                    xAxis: { type: 'category', data: data.histogram.bins },
+                    yAxis: { type: 'value' },
+                    series: [{
+                        type: 'bar',
+                        data: data.histogram.values
+                    }]
+                });
+            }
+            
+            // Add scatter plot if we have two numeric columns
+            if (data.scatter) {
+                configs.push({
+                    title: { text: `${data.scatter.xLabel} vs ${data.scatter.yLabel}` },
+                    xAxis: { type: 'value', name: data.scatter.xLabel },
+                    yAxis: { type: 'value', name: data.scatter.yLabel },
+                    series: [{
+                        type: 'scatter',
+                        data: data.scatter.x.map((x, i) => [x, data.scatter.y[i]])
+                    }]
+                });
+            }
+            
+            // Add boxplot for numeric columns
+            if (data.boxplot && data.boxplot.length > 0) {
+                configs.push({
+                    title: { text: 'Box Plot Analysis' },
+                    xAxis: { type: 'category', data: data.boxplot.map(d => d.name) },
+                    yAxis: { type: 'value' },
+                    series: [{
+                        type: 'boxplot',
+                        data: data.boxplot.map(d => [
+                            d.stats.min,
+                            d.stats.q1,
+                            d.stats.median,
+                            d.stats.q3,
+                            d.stats.max
+                        ])
+                    }]
+                });
+            }
+            
+            // Add heatmap for correlations if available
+            if (data.heatmap && data.heatmap.values && data.heatmap.values.length > 0) {
+                configs.push({
+                    title: { text: 'Correlation Heatmap' },
+                    tooltip: {
+                        position: 'top',
+                        formatter: (params) => {
+                            const value = params.data[2].toFixed(2);
+                            return `${data.heatmap.columns[params.data[0]]} vs ${data.heatmap.columns[params.data[1]]}: ${value}`;
+                        }
+                    },
+                    grid: {
+                        top: '10%',
+                        height: '70%'
+                    },
+                    xAxis: {
+                        type: 'category',
+                        data: data.heatmap.columns,
+                        splitArea: { show: true }
+                    },
+                    yAxis: {
+                        type: 'category',
+                        data: data.heatmap.columns,
+                        splitArea: { show: true }
+                    },
+                    visualMap: {
+                        min: -1,
+                        max: 1,
+                        calculable: true,
+                        orient: 'horizontal',
+                        left: 'center',
+                        bottom: '0%',
+                        inRange: {
+                            color: ['#d73027', '#f46d43', '#fdae61', '#fee090', '#e0f3f8', '#abd9e9', '#74add1', '#4575b4']
+                        }
+                    },
+                    series: [{
+                        type: 'heatmap',
+                        data: data.heatmap.values,
+                        label: {
+                            show: true,
+                            formatter: (params) => params.data[2].toFixed(2)
+                        }
+                    }]
+                });
+            }
+            
+            // Add categorical data visualization
+            if (data.categorical) {
+                Object.entries(data.categorical).forEach(([column, info]) => {
+                    const categories = Object.keys(info.frequencies);
+                    const values = Object.values(info.frequencies);
+                    
+                    configs.push({
+                        title: { text: `${column} Distribution` },
+                        tooltip: { trigger: 'item' },
+                        series: [{
+                            type: 'pie',
+                            radius: '50%',
+                            data: categories.map((cat, i) => ({
+                                name: cat,
+                                value: values[i]
+                            }))
+                        }]
+                    });
+                });
+            }
+            
+            return configs;
+        }
 
-            // Initialize comments
+        document.addEventListener('DOMContentLoaded', async () => {
+            // Get the analysis data and process it
+            const rawData = JSON.parse('{{ analysis.data | tojson | safe }}');
+            
+            // Unwrap the data object if needed
+            const dataToProcess = rawData.data || rawData;
+            const analysisData = processData(dataToProcess);
+            const shareId = '{{ analysis.share_id }}';
+            
+            if (!analysisData) {
+                console.error('Failed to process analysis data:', dataToProcess);
+                document.getElementById('visualizationContainer').innerHTML = `
+                    <div class="alert alert-danger">
+                        Failed to process visualization data. Please check the data format.
+                    </div>
+                `;
+                return;
+            }
+            
+            // Initialize the visualization system
+            await initializeCharts();
+            
+            // Update UI with the processed data
+            updateDataStats(dataToProcess);
+            if (dataToProcess.preview) {
+                updatePreviewTable(dataToProcess.preview);
+            }
+            
+            // Generate and update visualizations
+            try {
+                const configs = await generateVisualizations(analysisData);
+                if (configs && configs.length > 0) {
+                    await updateVisualizations(configs);
+                } else {
+                    document.getElementById('visualizationContainer').innerHTML = `
+                        <div class="alert alert-warning">
+                            No visualizations could be generated from this data.
+                        </div>
+                    `;
+                }
+            } catch (error) {
+                console.error('Visualization error:', error);
+                document.getElementById('visualizationContainer').innerHTML = `
+                    <div class="alert alert-danger">
+                        ${error.message || 'Failed to create visualizations'}
+                    </div>
+                `;
+            }
+
+            // Initialize comments and collaboration features
             loadComments();
             initializeCommentForm();
-            
-            // Start collaboration tracking
             startCollaborationTracking();
         });
 
