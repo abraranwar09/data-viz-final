@@ -45,24 +45,38 @@ except APIKeyError as e:
 def get_ai_insights(question: str, context: Dict[str, Any]) -> Dict[str, Any]:
     """
     Get insights from the AI model using the given question and context.
-    Calls sanitize_json to ensure the data is clean.
+    Handles visualization requests and data analysis.
     """
     try:
         context = sanitize_json(context)
+        
+        # Detect if visualization is requested
+        viz_keywords = ['chart', 'plot', 'graph', 'visualize', 'visualization', 'show']
+        is_viz_request = any(keyword in question.lower() for keyword in viz_keywords)
+        
+        if is_viz_request:
+            system_prompt = """You are a data visualization expert. When asked to create visualizations:
+            1. Return an ECharts configuration in ```echarts format
+            2. Only use supported chart types: bar, line, scatter, pie, boxplot, heatmap, radar
+            3. Include explanations for why the visualization is appropriate"""
+        else:
+            system_prompt = "You are a data analysis expert. Answer the specific question asked using the data provided."
+            
         response = openai_client.chat.completions.create(
             model="gpt-4",
             messages=[{
                 "role": "system",
-                "content": "You are a data analysis expert. Provide insightful and accurate analysis."
+                "content": system_prompt
             }, {
                 "role": "user",
                 "content": question,
             }, {
-                "role": "system",
+                "role": "system", 
                 "content": f"Data Context:\n{json.dumps(context)}"
             }],
             temperature=0.2
         )
+        
         return {
             "response": {
                 "answer": response.choices[0].message.content

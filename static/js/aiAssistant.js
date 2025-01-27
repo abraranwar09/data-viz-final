@@ -212,7 +212,7 @@ function addMessage(type, content) {
                'bi-robot';
     
     // Check for visualization configs in the message
-    if (type === 'assistant' && content.includes('```echarts')) {
+    if (type === 'assistant' && (content.includes('```echarts') || content.includes('```json'))) {
         // Extract all visualization configs
         const vizConfigs = [];
         const regex = /```echarts\n([\s\S]*?)\n```/g;
