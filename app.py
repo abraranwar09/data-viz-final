@@ -691,7 +691,7 @@ def prepareScatterData(data):
             if row[x_col] is not None and row[y_col] is not None
         ]
         
-       if not paired_data:
+        if not paired_data:
             logger.debug(f"No paired data found for scatter plot: {x_col}, {y_col}")
             return None
 
