@@ -20,48 +20,36 @@ class StatisticalInsights {
         if (!overview) return '';
         
         return `
-            <div class="card mb-4">
-                <div class="card-header d-flex align-items-center">
-                    <i class="bi bi-table me-2"></i>
+            <div class="card overview-card">
+                <div class="card-header">
+                    <span class="header-icon">📊</span>
                     <h6 class="mb-0">Dataset Overview</h6>
+                    <span class="health-indicator">94% Health</span>
                 </div>
                 <div class="card-body">
-                    <div class="row">
-                        <div class="col-md-3 mb-3">
-                            <div class="stat-box">
-                                <div class="stat-label">Total Rows</div>
-                                <div class="stat-value">${overview.total_rows}</div>
-                            </div>
+                    <div class="metrics-grid">
+                        <div class="metric-item">
+                            <div class="metric-icon">📝</div>
+                            <div class="metric-label">Total Rows</div>
+                            <div class="metric-value">${overview.total_rows}</div>
                         </div>
-                        <div class="col-md-3 mb-3">
-                            <div class="stat-box">
-                                <div class="stat-label">Total Columns</div>
-                                <div class="stat-value">${overview.total_columns}</div>
-                            </div>
+                        <div class="metric-item">
+                            <div class="metric-icon">📊</div>
+                            <div class="metric-label">Total Columns</div>
+                            <div class="metric-value">${overview.total_columns}</div>
                         </div>
-                    </div>
-                    <div class="row mt-3">
-                        <div class="col-12">
-                            <h6 class="text-muted mb-3">Column Distribution</h6>
-                            <div class="d-flex justify-content-between">
-                                ${this._renderColumnType('Numeric', overview.column_types.numeric)}
-                                ${this._renderColumnType('Categorical', overview.column_types.categorical)}
-                                ${this._renderColumnType('DateTime', overview.column_types.datetime)}
-                                ${this._renderColumnType('Text/Other', overview.column_types.other)}
-                            </div>
+                        <div class="metric-item">
+                            <div class="metric-icon">💾</div>
+                            <div class="metric-label">Memory Usage</div>
+                            <div class="metric-value">${overview.memory_usage}</div>
+                        </div>
+                        <div class="metric-item">
+                            <div class="metric-icon">🕒</div>
+                            <div class="metric-label">Last Updated</div>
+                            <div class="metric-value">${new Date().toLocaleTimeString()}</div>
                         </div>
                     </div>
                 </div>
-            </div>
-        `;
-    }
-
-    _renderColumnType(label, data) {
-        return `
-            <div class="column-type-box">
-                <div class="type-label">${label}</div>
-                <div class="type-count">${data.count}</div>
-                <div class="type-percentage">${data.percentage}</div>
             </div>
         `;
     }
@@ -70,16 +58,17 @@ class StatisticalInsights {
         if (!quality) return '';
         
         return `
-            <div class="card mb-4">
-                <div class="card-header d-flex align-items-center">
-                    <i class="bi bi-check-circle me-2"></i>
+            <div class="card quality-card">
+                <div class="card-header">
+                    <span class="header-icon">✨</span>
                     <h6 class="mb-0">Data Quality Analysis</h6>
                 </div>
                 <div class="card-body">
-                    <div class="row">
+                    <div class="quality-grid">
                         ${this._renderQualityMetric('Completeness', quality.completeness)}
                         ${this._renderQualityMetric('Uniqueness', quality.uniqueness)}
                         ${this._renderQualityMetric('Consistency', quality.consistency)}
+                        ${this._renderQualityMetric('Outlier Score', quality.outlier_score)}
                     </div>
                 </div>
             </div>
@@ -87,9 +76,14 @@ class StatisticalInsights {
     }
 
     _renderQualityMetric(label, metric) {
+        if (!metric) return '';
+        
         return `
-            <div class="col-md-4 mb-3">
-                <div class="quality-metric">
+            <div class="quality-metric">
+                <div class="metric-icon ${metric.rating.toLowerCase()}">
+                    ${this._getQualityIcon(metric.rating)}
+                </div>
+                <div class="metric-details">
                     <div class="metric-label">${label}</div>
                     <div class="metric-value ${metric.rating.toLowerCase()}">${metric.score}</div>
                     <div class="metric-rating">${metric.rating}</div>
@@ -98,14 +92,23 @@ class StatisticalInsights {
         `;
     }
 
+    _getQualityIcon(rating) {
+        switch(rating.toLowerCase()) {
+            case 'excellent': return '✅';
+            case 'good': return '👍';
+            case 'poor': return '⚠️';
+            default: return '❓';
+        }
+    }
+
     _renderColumnInsights(columns) {
         if (!columns) return '';
         
         return `
-            <div class="card">
-                <div class="card-header d-flex align-items-center">
-                    <i class="bi bi-graph-up me-2"></i>
-                    <h6 class="mb-0">Statistical Insights</h6>
+            <div class="card distribution-card">
+                <div class="card-header">
+                    <span class="header-icon">📊</span>
+                    <h6 class="mb-0">Column Analysis</h6>
                 </div>
                 <div class="card-body">
                     ${Object.entries(columns).map(([column, stats]) => this._renderColumnStats(column, stats)).join('')}
@@ -115,44 +118,74 @@ class StatisticalInsights {
     }
 
     _renderColumnStats(column, stats) {
+        if (!stats || !stats.statistics) return '';
+        
+        const insights = stats.key_insights || [];
+        
         return `
-            <div class="column-stats mb-4">
-                <h6 class="stats-header">
-                    <i class="bi bi-bar-chart me-2"></i>${column}
-                </h6>
-                <div class="row">
-                    <div class="col-md-6">
-                        <div class="stats-grid">
-                            <div class="stat-item">
-                                <span class="stat-label">Mean</span>
-                                <span class="stat-value">${stats.statistics.mean.toFixed(2)}</span>
+            <div class="column-stats">
+                <div class="stats-header">
+                    <span class="column-icon">📊</span>
+                    <span class="column-name">${column}</span>
+                </div>
+                <div class="stats-content">
+                    <div class="stats-grid">
+                        <div class="stats-row">
+                            <div class="stat-group">
+                                <div class="stat-item">
+                                    <span class="stat-label">Mean</span>
+                                    <span class="stat-value">${this._formatValue(stats.statistics.mean)}</span>
+                                </div>
+                                <div class="stat-item">
+                                    <span class="stat-label">Median</span>
+                                    <span class="stat-value">${this._formatValue(stats.statistics.median)}</span>
+                                </div>
+                                <div class="stat-item">
+                                    <span class="stat-label">Std Dev</span>
+                                    <span class="stat-value">${this._formatValue(stats.statistics.std)}</span>
+                                </div>
                             </div>
-                            <div class="stat-item">
-                                <span class="stat-label">Median</span>
-                                <span class="stat-value">${stats.statistics.median.toFixed(2)}</span>
-                            </div>
-                            <div class="stat-item">
-                                <span class="stat-label">Std Dev</span>
-                                <span class="stat-value">${stats.statistics.std.toFixed(2)}</span>
-                            </div>
-                            <div class="stat-item">
-                                <span class="stat-label">CV</span>
-                                <span class="stat-value">${stats.statistics.cv}</span>
+                            <div class="stat-group">
+                                <div class="stat-item">
+                                    <span class="stat-label">CV</span>
+                                    <span class="stat-value">${this._formatValue(stats.statistics.cv, '%')}</span>
+                                </div>
+                                <div class="stat-item">
+                                    <span class="stat-label">Kurtosis</span>
+                                    <span class="stat-value">${this._formatValue(stats.statistics.kurtosis)}</span>
+                                </div>
+                                <div class="stat-item">
+                                    <span class="stat-label">Skewness</span>
+                                    <span class="stat-value">${this._formatValue(stats.statistics.skewness)}</span>
+                                </div>
                             </div>
                         </div>
                     </div>
-                    <div class="col-md-6">
-                        <div class="key-insights">
-                            ${stats.key_insights.map(insight => `
+                    ${insights.length > 0 ? `
+                        <div class="insights-list">
+                            ${insights.map(insight => `
                                 <div class="insight-item">
-                                    <i class="bi bi-lightbulb me-2"></i>
+                                    <span class="insight-icon">💡</span>
                                     ${insight}
                                 </div>
                             `).join('')}
                         </div>
-                    </div>
+                    ` : ''}
                 </div>
             </div>
         `;
+    }
+
+    _formatValue(value, suffix = '') {
+        if (value === undefined || value === null) return 'N/A';
+        if (typeof value === 'number') {
+            // Handle percentage values
+            if (suffix === '%') {
+                return `${value.toFixed(1)}${suffix}`;
+            }
+            // Handle regular numbers
+            return Math.abs(value) < 0.01 ? value.toExponential(2) : value.toFixed(2);
+        }
+        return value;
     }
 } 
