@@ -25,12 +25,12 @@ def validate_api_keys():
     """Validate required API keys are present."""
     openai_key = os.environ.get("OPENAI_API_KEY")
     perplexity_key = os.environ.get("PERPLEXITY_API_KEY")
-    
+
     if not openai_key:
         raise APIKeyError("OpenAI API key is missing")
     if not perplexity_key:
         raise APIKeyError("Perplexity API key is missing")
-    
+
     return openai_key, perplexity_key
 
 
@@ -49,14 +49,14 @@ def get_ai_insights(question: str, context: Dict[str, Any]) -> Dict[str, Any]:
     """
     try:
         context = sanitize_json(context)
-        
+
         # Detect if visualization is requested
         viz_keywords = ['chart', 'plot', 'graph', 'visualize', 'visualization', 'show']
         is_viz_request = any(keyword in question.lower() for keyword in viz_keywords)
-        
+
         if is_viz_request:
             chart_configs = []
-            
+
             # 1. First try GPT-4 function calling approach
             try:
                 viz_configs = get_visualization_configs(context)
@@ -67,7 +67,7 @@ def get_ai_insights(question: str, context: Dict[str, Any]) -> Dict[str, Any]:
                             chart_configs.append(config)
             except Exception as e:
                 logger.error(f"Primary visualization attempt failed: {str(e)}")
-            
+
             # 2. If no charts yet, try basic suggestions
             if not chart_configs:
                 try:
@@ -78,7 +78,7 @@ def get_ai_insights(question: str, context: Dict[str, Any]) -> Dict[str, Any]:
                             chart_configs.append(config)
                 except Exception as e:
                     logger.error(f"Basic suggestions failed: {str(e)}")
-            
+
             # 3. If still no charts, force a simple visualization
             if not chart_configs:
                 try:
@@ -87,7 +87,7 @@ def get_ai_insights(question: str, context: Dict[str, Any]) -> Dict[str, Any]:
                         col for col, stats in context.get('column_stats', {}).items()
                         if stats.get('type') == 'numeric'
                     ]
-                    
+
                     if numeric_cols:
                         # Create a simple bar chart of the first numeric column
                         simple_config = {
@@ -118,7 +118,7 @@ def get_ai_insights(question: str, context: Dict[str, Any]) -> Dict[str, Any]:
                                 chart_configs.append(config)
                 except Exception as e:
                     logger.error(f"Forced visualization failed: {str(e)}")
-            
+
             # 4. Absolute last resort - create an empty chart with message
             if not chart_configs:
                 empty_chart = {
@@ -129,23 +129,23 @@ def get_ai_insights(question: str, context: Dict[str, Any]) -> Dict[str, Any]:
                         'data': [1],
                         'itemStyle': {'color': '#37a2da'},
                         'label': {
-                            'show': true,
+                            'show': True,
                             'position': 'top',
                             'formatter': 'No visualizable data found'
                         }
                     }]
                 }
                 chart_configs.append(empty_chart)
-            
+
             return {
                 "answer": "Here are the visualizations based on your data:",
                 "visualizations": chart_configs
             }
-            
+
         else:
             # Handle non-visualization requests
             system_prompt = "You are a data analysis expert. Answer the specific question asked using the data provided."
-            
+
             response = openai_client.chat.completions.create(
                 model="gpt-4o",
                 messages=[{
@@ -160,9 +160,9 @@ def get_ai_insights(question: str, context: Dict[str, Any]) -> Dict[str, Any]:
                 }],
                 temperature=0.2
             )
-            
+
             return {"answer": response.choices[0].message.content}
-            
+
     except Exception as e:
         logger.error(f"Error in get_ai_insights: {str(e)}")
         # Even on complete failure, return an empty chart
@@ -176,7 +176,7 @@ def get_ai_insights(question: str, context: Dict[str, Any]) -> Dict[str, Any]:
                     'data': [1],
                     'itemStyle': {'color': '#37a2da'},
                     'label': {
-                        'show': true,
+                        'show': True,
                         'position': 'top',
                         'formatter': 'Error processing data'
                     }
@@ -201,20 +201,20 @@ def prepare_data_context(context: Dict[str, Any]) -> Dict[str, Any]:
             col for col in context.get('columns', [])
             if any(t in col.lower() for t in ['time', 'date', 'year', 'month', 'day'])
         ]
-        
+
         # Validate minimum data requirements
         if not context.get('preview') or not context.get('columns'):
             return {
                 "success": False,
                 "error": "No data available for visualization"
             }
-            
+
         if not numeric_cols and not categorical_cols:
             return {
                 "success": False,
                 "error": "No numeric or categorical columns found for visualization"
             }
-            
+
         # Prepare the context
         data_context = {
             "numeric_columns": numeric_cols,
@@ -230,12 +230,12 @@ def prepare_data_context(context: Dict[str, Any]) -> Dict[str, Any]:
                 "graph", "themeRiver", "parallel"
             ]
         }
-        
+
         return {
             "success": True,
             "data": data_context
         }
-        
+
     except Exception as e:
         logger.error(f"Error preparing data context: {str(e)}")
         return {
@@ -341,14 +341,14 @@ def validate_visualization_suggestion(suggestion: Dict[str, Any],
     try:
         if not isinstance(suggestion, dict):
             return False
-        
+
         # Check for required keys
         required_keys = ["chart_type", "title", "x_axis", "y_axis", "explanation"]
         if not all(key in suggestion for key in required_keys):
             return False
-        
+
         return True
-    
+
     except Exception as e:
         logger.error(f"Error in validate_visualization_suggestion: {str(e)}")
         return False
@@ -357,7 +357,7 @@ def validate_visualization_suggestion(suggestion: Dict[str, Any],
 def generate_basic_suggestions(data: Dict[str, Any]) -> List[Dict[str, Any]]:
     """Generate basic visualization suggestions as fallback"""
     suggestions = []
-    
+
     # Use determine_best_chart_type for smarter selection
     numeric_cols = [
         col for col, stats in data.get('column_stats', {}).items()
@@ -396,7 +396,7 @@ def generate_basic_suggestions(data: Dict[str, Any]) -> List[Dict[str, Any]]:
             'explanation':
             'Analyzing numeric distribution across categories'
         })
-    
+
     if len(numeric_cols) >= 1:
         suggestions.append({
             'chart_type':
@@ -410,7 +410,7 @@ def generate_basic_suggestions(data: Dict[str, Any]) -> List[Dict[str, Any]]:
             'explanation':
             'Understanding numeric distribution and outliers'
         })
-    
+
     return suggestions
 
 
@@ -424,7 +424,7 @@ def validate_chart_data(chart_type: str, data: Dict[str, Any], x_axis: Optional[
         if chart_type == 'candlestick':
             required_fields = ['open', 'close', 'high', 'low']
             return all(field in preview_data[0] for field in required_fields)
-        
+
         elif chart_type == 'gauge':
             if not x_axis or x_axis not in preview_data[0]:
                 return False
@@ -433,7 +433,7 @@ def validate_chart_data(chart_type: str, data: Dict[str, Any], x_axis: Optional[
                 return True
             except (ValueError, TypeError):
                 return False
-        
+
         elif chart_type == 'parallel':
             # Check if all dimensions have valid data
             dimensions = list(preview_data[0].keys())
@@ -442,7 +442,7 @@ def validate_chart_data(chart_type: str, data: Dict[str, Any], x_axis: Optional[
                     for row in preview_data)
                 for dim in dimensions
             )
-        
+
         elif chart_type == 'funnel':
             if not x_axis:
                 return False
@@ -454,7 +454,7 @@ def validate_chart_data(chart_type: str, data: Dict[str, Any], x_axis: Optional[
                 key = str(row.get(x_axis, ''))
                 value_counts[key] = value_counts.get(key, 0) + 1
             return len(value_counts) >= 2
-        
+
         elif chart_type in ['sunburst', 'treemap']:
             if not all([x_axis, y_axis]):
                 return False
@@ -464,7 +464,7 @@ def validate_chart_data(chart_type: str, data: Dict[str, Any], x_axis: Optional[
                 row[x_axis] is not None and row[y_axis] is not None
                 for row in preview_data
             )
-        
+
         elif chart_type == 'graph':
             if not all([x_axis, y_axis]):
                 return False
@@ -490,18 +490,18 @@ def generate_visualization_config(
         title = args.get('title')
         x_axis = args.get('x_axis')
         y_axis = args.get('y_axis')
-        
+
         # Strict validation of required fields
         if not all([chart_type, title]):
             logger.error(f"Missing required fields in visualization config: {args}")
             return None
-            
+
         # Chart types that don't need both axes
         AXISLESS_CHARTS = ['pie', 'treemap', 'sunburst', 'gauge', 'funnel']
         if chart_type not in AXISLESS_CHARTS and not all([x_axis, y_axis]):
             logger.error(f"Missing axis fields for {chart_type} chart: {args}")
             return None
-        
+
         # Validate data requirements for chart type
         if not validate_chart_data(chart_type, data, x_axis, y_axis):
             logger.error(f"Data validation failed for {chart_type} chart")
@@ -524,7 +524,7 @@ def generate_visualization_config(
                 if child not in value_map[parent]:
                     value_map[parent][child] = 0
                 value_map[parent][child] += 1
-            
+
             tree_data = []
             for parent, children in value_map.items():
                 parent_node = {
@@ -534,7 +534,7 @@ def generate_visualization_config(
                                for child, value in children.items()]
                 }
                 tree_data.append(parent_node)
-            
+
             if chart_type == 'treemap':
                 return {
                     'title': {'text': title},
@@ -579,14 +579,14 @@ def generate_visualization_config(
         elif chart_type == 'parallel':
             dimensions = list(preview_data[0].keys())
             parallel_axis = []
-            
+
             # Calculate value ranges for numeric dimensions
             ranges = {}
             for dim in dimensions:
                 values = [row[dim] for row in preview_data if row[dim] is not None]
                 if all(isinstance(v, (int, float)) for v in values):
                     ranges[dim] = (min(values), max(values))
-            
+
             # Create parallel axes with proper configuration
             for dim in dimensions:
                 axis = {'dim': dimensions.index(dim), 'name': dim}
@@ -603,7 +603,7 @@ def generate_visualization_config(
                         'data': list(set(str(row[dim]) for row in preview_data if row[dim] is not None))
                     })
                 parallel_axis.append(axis)
-            
+
             # Normalize and prepare data
             normalized_data = []
             for row in preview_data:
@@ -622,7 +622,7 @@ def generate_visualization_config(
                         point.append(str(value) if value is not None else '')
                 if all(p != '' for p in point):
                     normalized_data.append(point)
-            
+
             return {
                 'title': {'text': title},
                 'parallelAxis': parallel_axis,
@@ -630,7 +630,7 @@ def generate_visualization_config(
                     'type': 'parallel',
                     'lineStyle': {'width': 2},
                     'data': normalized_data,
-                    'smooth': true
+                    'smooth': True
                 }]
             }
 
@@ -642,7 +642,7 @@ def generate_visualization_config(
                 key = str(row.get(x_axis, ''))
                 value_counts[key] = value_counts.get(key, 0) + 1
                 total += 1
-            
+
             # Calculate percentages and sort by value
             funnel_data = []
             for k, v in sorted(value_counts.items(), key=lambda x: x[1], reverse=True):
@@ -652,7 +652,7 @@ def generate_visualization_config(
                     'name': f"{k} ({percentage:.1f}%)",
                     'percentage': percentage
                 })
-            
+
             return {
                 'title': {'text': title},
                 'tooltip': {
@@ -684,11 +684,11 @@ def generate_visualization_config(
                          if x_axis in row and row[x_axis] is not None]
                 if not values:
                     return None
-                
+
                 value = values[0]  # Current value
                 min_val = min(values)
                 max_val = max(values)
-                
+
                 # Calculate ranges for color zones
                 range_size = (max_val - min_val) / 3
                 ranges = [
@@ -696,7 +696,7 @@ def generate_visualization_config(
                     [min_val + range_size, min_val + 2*range_size, '#37a2da'],  # Warning
                     [min_val + 2*range_size, max_val, '#fd666d']  # Critical
                 ]
-                
+
                 return {
                     'title': {'text': title},
                     'tooltip': {'formatter': '{b}: {c}'},
@@ -735,7 +735,7 @@ def generate_visualization_config(
                 data = []
                 categories = []
                 volumes = []  # For volume bars if available
-                
+
                 for row in preview_data:
                     if all(row.get(f) is not None for f in [x_axis, 'open', 'close', 'high', 'low']):
                         categories.append(row[x_axis])
@@ -746,14 +746,14 @@ def generate_visualization_config(
                             float(row['high'])
                         ]
                         data.append(point)
-                        
+
                         # Add volume if available
                         if 'volume' in row and row['volume'] is not None:
                             volumes.append(float(row['volume']))
-                
+
                 if not data:
                     return None
-                
+
                 series = [{
                     'type': 'candlestick',
                     'data': data,
@@ -764,7 +764,7 @@ def generate_visualization_config(
                         'borderColor0': '#37a2da'
                     }
                 }]
-                
+
                 # Add volume bars if available
                 if volumes:
                     series.append({
@@ -774,7 +774,7 @@ def generate_visualization_config(
                         'data': volumes,
                         'itemStyle': {'color': '#37a2da'}
                     })
-                
+
                 config = {
                     'title': {'text': title},
                     'tooltip': {
@@ -810,9 +810,9 @@ def generate_visualization_config(
                     }],
                     'series': series
                 }
-                
+
                 return config
-                
+
             except Exception as e:
                 logger.error(f"Error generating candlestick chart: {str(e)}")
                 return None
@@ -823,7 +823,7 @@ def generate_visualization_config(
                 nodes = []
                 links = []
                 node_map = {}
-                
+
                 # Calculate node weights (frequency of appearance)
                 node_weights = {}
                 for row in preview_data:
@@ -831,7 +831,7 @@ def generate_visualization_config(
                     target = str(row.get(y_axis, ''))
                     node_weights[source] = node_weights.get(source, 0) + 1
                     node_weights[target] = node_weights.get(target, 0) + 1
-                
+
                 # Create nodes with size based on weight
                 for node, weight in node_weights.items():
                     node_map[node] = len(nodes)
@@ -840,7 +840,7 @@ def generate_visualization_config(
                         'symbolSize': min(50, 10 + weight * 5),  # Scale node size
                         'value': weight
                     })
-                
+
                 # Create edges with weights
                 edge_weights = {}
                 for row in preview_data:
@@ -848,7 +848,7 @@ def generate_visualization_config(
                     target = str(row.get(y_axis, ''))
                     edge_key = f"{source}-{target}"
                     edge_weights[edge_key] = edge_weights.get(edge_key, 0) + 1
-                
+
                 for edge_key, weight in edge_weights.items():
                     source, target = edge_key.split('-')
                     links.append({
@@ -859,7 +859,7 @@ def generate_visualization_config(
                             'width': min(10, 1 + weight)  # Scale edge width
                         }
                     })
-                
+
                 return {
                     'title': {'text': title},
                     'tooltip': {
@@ -904,7 +904,7 @@ def generate_visualization_config(
                         }
                     }]
                 }
-                
+
             except Exception as e:
                 logger.error(f"Error generating graph chart: {str(e)}")
                 return None
@@ -915,11 +915,11 @@ def generate_visualization_config(
                 # Get the continuous axis values (e.g., income)
                 x_values = [float(row[x_axis]) for row in preview_data if x_axis in row and row[x_axis] is not None]
                 y_values = [float(row[y_axis]) for row in preview_data if y_axis in row and row[y_axis] is not None]
-                
+
                 if not x_values or not y_values:
                     logger.error("No valid data points for ThemeRiver")
                     return None
-                
+
                 # Create income brackets
                 min_income = min(x_values)
                 max_income = max(x_values)
@@ -928,8 +928,8 @@ def generate_visualization_config(
                     (min_income + i * bracket_size, min_income + (i + 1) * bracket_size)
                     for i in range(5)
                 ]
-                
-                # Create debt ratio categories
+
+                #Create debt ratio categories
                 min_ratio = min(y_values)
                 max_ratio = max(y_values)
                 ratio_range = max_ratio - min_ratio
@@ -938,13 +938,13 @@ def generate_visualization_config(
                     ('Medium', min_ratio + ratio_range/3, min_ratio + 2*ratio_range/3),
                     ('High', min_ratio + 2*ratio_range/3, max_ratio)
                 ]
-                
+
                 # Transform data into ThemeRiver format
                 theme_data = []
                 for i, (bracket_start, bracket_end) in enumerate(brackets):
                     bracket_midpoint = (bracket_start + bracket_end) / 2
                     bracket_label = f"${int(bracket_start)}k-${int(bracket_end)}k"
-                    
+
                     # Count records in each category for this bracket
                     for category_name, cat_start, cat_end in ratio_categories:
                         count = sum(
@@ -955,14 +955,14 @@ def generate_visualization_config(
                         )
                         if count > 0:  # Only add non-zero data points
                             theme_data.append([bracket_label, count, category_name])
-                
+
                 if not theme_data:
                     logger.error("No valid theme data generated")
                     return None
-                
+
                 # Sort data by bracket label
                 theme_data.sort(key=lambda x: float(x[0].split('-')[0].replace('$', '').replace('k', '')))
-                
+
                 return {
                     'title': {'text': title},
                     'tooltip': {
@@ -986,7 +986,7 @@ def generate_visualization_config(
                         'type': 'themeRiver',
                         'emphasis': {'itemStyle': {'shadowBlur': 20, 'shadowColor': 'rgba(0, 0, 0, 0.8)'}},
                         'data': theme_data,
-                        'label': {'show': true},
+                        'label': {'show': True},
                         'itemStyle': {
                             'color': {
                                 'type': 'linear',
@@ -1296,11 +1296,11 @@ def format_data_context(data: Optional[Dict[str, Any]]) -> Optional[str]:
     """Format the data context for the AI prompt."""
     if not data:
         return None
-        
+
     try:
         data_summary = f"Data summary: {json.dumps(data['summary'])}\n"
         column_info = "Columns: " + ", ".join(data['columns']) + "\n"
-        
+
         stats_info = "Column statistics:\n"
         for col, stats in data['column_stats'].items():
             if isinstance(stats, dict):
@@ -1382,7 +1382,7 @@ def determine_best_chart_type(data: Dict[str, Any], columns: List[str]) -> str:
     try:
         # Get column types
         col_types = {col: data['column_stats'][col]['type'] for col in columns}
-        
+
         # Time series detection
         time_cols = [
             col for col, stats in data['column_stats'].items()
@@ -1392,7 +1392,7 @@ def determine_best_chart_type(data: Dict[str, Any], columns: List[str]) -> str:
         if time_cols and any(col_types[col] == 'numeric'
                              for col in columns if col not in time_cols):
             return 'line'  # Time series data
-            
+
         # Count numeric and categorical columns
         numeric_cols = [
             col for col, type_ in col_types.items() if type_ == 'numeric'
@@ -1400,7 +1400,7 @@ def determine_best_chart_type(data: Dict[str, Any], columns: List[str]) -> str:
         categorical_cols = [
             col for col, type_ in col_types.items() if type_ == 'categorical'
         ]
-        
+
         if len(numeric_cols) >= 2:
             return 'scatter'  # Multiple numeric columns -> correlation
         elif len(categorical_cols) == 1 and len(numeric_cols) == 1:
@@ -1409,7 +1409,7 @@ def determine_best_chart_type(data: Dict[str, Any], columns: List[str]) -> str:
             return 'pie'  # Single category -> distribution
         else:
             return 'bar'  # Default to bar
-            
+
     except Exception:
         return 'bar'  # Safe default
 
@@ -1458,21 +1458,21 @@ def get_visualization_configs(data: Dict[str, Any]) -> Dict[str, Any]:
             "content":
             """You are a data visualization expert specializing in ECharts.
             Analyze the provided data and create optimal visualizations that best represent the patterns and insights.
-            
+
             Consider:
             1. Data types (numeric, categorical, temporal)
             2. Data distributions and patterns
             3. Potential correlations
             4. Time series patterns if applicable
             5. Categorical distributions and relationships
-            
+
             For each visualization, provide:
             1. chart_type: The most appropriate chart type
             2. title: A clear, descriptive title
             3. x_axis: Column for x-axis (if applicable)
             4. y_axis: Column for y-axis (if applicable)
             5. explanation: Why this visualization is insightful
-            
+
             Return a JSON array of visualization configurations.
             Each config should follow the schema provided in the function definition.
             Limit to 3-4 most insightful visualizations."""
