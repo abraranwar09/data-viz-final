@@ -374,10 +374,23 @@ def validate_visualization_suggestion(suggestion: Dict[str, Any],
         if not isinstance(suggestion, dict):
             return False
 
-        # Check for required keys
-        required_keys = ["chart_type", "title", "x_axis", "y_axis", "explanation"]
-        if not all(key in suggestion for key in required_keys):
+        # Check for required keys based on chart type
+        base_required = ["chart_type", "title", "explanation"]
+        if not all(key in suggestion for key in base_required):
             return False
+            
+        # Special handling for radar charts
+        if suggestion["chart_type"] == "radar":
+            if not all(key in data["column_stats"] for key in [suggestion.get("x_axis", ""), suggestion.get("y_axis", "")]):
+                return False
+            return True
+            
+        # Regular charts need both axes
+        if suggestion["chart_type"] not in ["pie", "gauge", "funnel"]:
+            if not all(key in suggestion for key in ["x_axis", "y_axis"]):
+                return False
+            if not all(key in data["column_stats"] for key in [suggestion["x_axis"], suggestion["y_axis"]]):
+                return False
 
         return True
 

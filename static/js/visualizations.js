@@ -122,6 +122,20 @@ async function updateVisualizations(configs) {
         console.error('Invalid configs format:', configs);
         return;
     }
+    
+    // Ensure each config has required properties
+    configs = configs.map(config => ({
+        grid: {
+            left: '3%',
+            right: '4%',
+            bottom: '15%',
+            containLabel: true
+        },
+        ...config,
+        backgroundColor: 'transparent'
+    }));
+    
+    console.log('Processing visualization configs:', configs);
     log('Starting visualization update with configs:', configs);
     
     const container = document.getElementById('visualizationContainer');

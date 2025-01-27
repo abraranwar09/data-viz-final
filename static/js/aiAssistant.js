@@ -174,9 +174,14 @@ async function handleAIQuestion() {
         console.log('Received response:', result);
 
         const answer = result?.response?.response?.answer || result?.response?.answer;
+const visualizations = result?.response?.response?.visualizations || result?.response?.visualizations;
+
 if (answer) {
     addMessage('assistant', answer);
-    await handleVisualizationResponse(answer);
+    if (visualizations && Array.isArray(visualizations)) {
+        console.log('Rendering visualizations:', visualizations);
+        await updateVisualizations(visualizations);
+    }
     elements.questionInput.value = '';
 } else {
     throw new Error('Invalid response format');
