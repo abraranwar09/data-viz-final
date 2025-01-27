@@ -118,6 +118,10 @@ function cleanupCharts() {
 }
 
 async function updateVisualizations(configs) {
+    if (!Array.isArray(configs)) {
+        console.error('Invalid configs format:', configs);
+        return;
+    }
     log('Starting visualization update with configs:', configs);
     
     const container = document.getElementById('visualizationContainer');

@@ -173,15 +173,14 @@ async function handleAIQuestion() {
         const result = await response.json();
         console.log('Received response:', result);
 
-        if (result?.response?.response?.answer) {
-            addMessage('assistant', result.response.response.answer);
-            elements.questionInput.value = '';
-        } else if (result?.response?.answer) {
-            addMessage('assistant', result.response.answer);
-            elements.questionInput.value = '';
-        } else {
-            throw new Error('Invalid response format');
-        }
+        const answer = result?.response?.response?.answer || result?.response?.answer;
+if (answer) {
+    addMessage('assistant', answer);
+    await handleVisualizationResponse(answer);
+    elements.questionInput.value = '';
+} else {
+    throw new Error('Invalid response format');
+}
 
     } catch (error) {
         console.error('AI Error:', error);
@@ -291,14 +290,28 @@ function scrollToBottom() {
 
 // Add helper function to extract visualization config
 function extractVisualizationConfig(message) {
-    const matches = message.match(/```echarts\n([\s\S]*?)\n```/);
-    if (matches && matches[1]) {
+    const configs = [];
+    const regex = /```(?:echarts|json)\n([\s\S]*?)\n```/g;
+    let match;
+    
+    while ((match = regex.exec(message)) !== null) {
         try {
-            return JSON.parse(matches[1]);
+            const config = JSON.parse(match[1]);
+            if (isValidVisualizationConfig(config)) {
+                configs.push(config);
+            }
         } catch (e) {
             console.error('Failed to parse visualization config:', e);
-            return null;
         }
     }
-    return null;
+    return configs;
+}
+
+async function handleVisualizationResponse(response) {
+    const configs = extractVisualizationConfig(response);
+    if (configs.length > 0) {
+        await updateVisualizations(configs);
+        return true;
+    }
+    return false;
 }
