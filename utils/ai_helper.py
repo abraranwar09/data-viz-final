@@ -63,10 +63,18 @@ def get_ai_insights(question: str, context: Dict[str, Any]) -> Dict[str, Any]:
             }],
             temperature=0.2
         )
-        return response.choices[0].message.content
+        return {
+            "response": {
+                "answer": response.choices[0].message.content
+            }
+        }
     except Exception as e:
         logger.error(f"Error in get_ai_insights: {str(e)}")
-        return {"error": str(e)}
+        return {
+            "response": {
+                "answer": f"Error: {str(e)}"
+            }
+        }
 
 
 def extract_visualization_suggestions(
