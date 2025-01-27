@@ -738,15 +738,6 @@ def prepareBoxplotData(data):
                         'q3': stats.get('q3', values[q3_idx] if values else stats['max']),
                         'max': stats['max']
                     }
-               boxplot_data.append({
-                    'name': col,
-                    'stats': {
-                        'min': stats['min'],
-                        'q1': stats.get('q1', values[q1_idx] if values else stats['min']),
-                        'median': stats['median'],
-                        'q3': stats.get('q3', values[q3_idx] if values else stats['max']),
-                        'max': stats['max']
-                    }
                 })
 
         return boxplot_data
