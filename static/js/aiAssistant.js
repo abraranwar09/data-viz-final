@@ -173,7 +173,10 @@ async function handleAIQuestion() {
         const result = await response.json();
         console.log('Received response:', result);
 
-        if (result?.response?.answer) {
+        if (result?.response?.response?.answer) {
+            addMessage('assistant', result.response.response.answer);
+            elements.questionInput.value = '';
+        } else if (result?.response?.answer) {
             addMessage('assistant', result.response.answer);
             elements.questionInput.value = '';
         } else {
