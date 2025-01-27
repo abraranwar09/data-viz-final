@@ -4,7 +4,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         // Initialize app state first
         await initializeAppState();
         
-        // Initialize components in order
+        // Initialize visualization system first
+        await initializeCharts();
+        
+        // Then initialize other components
         await initializeAIAssistant();
         initializeFileHandlers();
         initializeSharing();
@@ -24,13 +27,11 @@ async function initializeAppState(retryCount = 0) {
             charts: {},
             statistics: null,
             initialized: false,
-            retryAttempts: 0
+            retryAttempts: 0,
+            visualizationSystem: null
         };
 
-        // Initialize charts after state is ready
-        await initializeCharts();
         window.appState.initialized = true;
-
     } catch (error) {
         console.error('Failed to initialize app state:', error);
         if (retryCount < 3) {

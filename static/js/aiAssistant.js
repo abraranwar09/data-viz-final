@@ -171,27 +171,56 @@ async function handleAIQuestion() {
         }
 
         const result = await response.json();
-        console.log('Received response:', result);
+        console.log('Raw AI Response:', result);
 
+        // Extract answer and visualizations, with detailed logging
         const answer = result?.response?.response?.answer || result?.response?.answer;
-const visualizations = result?.response?.response?.visualizations || result?.response?.visualizations;
+        const visualizations = result?.response?.response?.visualizations || result?.response?.visualizations;
+        
+        console.log('Extracted Answer:', answer);
+        console.log('Extracted Visualizations:', visualizations);
 
-if (answer) {
-    addMessage('assistant', answer);
-    if (visualizations && Array.isArray(visualizations)) {
-        console.log('Rendering visualizations:', visualizations);
-        await updateVisualizations(visualizations);
-    }
-    elements.questionInput.value = '';
-} else {
-    throw new Error('Invalid response format');
-}
+        if (answer) {
+            addMessage('assistant', answer);
+            
+            // Handle visualizations with explicit type checking
+            if (visualizations) {
+                console.log('Visualization Type:', typeof visualizations);
+                console.log('Visualization Structure:', JSON.stringify(visualizations, null, 2));
+                
+                // Ensure visualizations is an array
+                const vizArray = Array.isArray(visualizations) ? visualizations : [visualizations];
+                
+                // Validate each visualization config
+                const validConfigs = vizArray.filter(config => {
+                    if (!config || typeof config !== 'object') {
+                        console.error('Invalid config format:', config);
+                        return false;
+                    }
+                    if (!config.series || !Array.isArray(config.series)) {
+                        console.error('Missing or invalid series:', config);
+                        return false;
+                    }
+                    return true;
+                });
+
+                if (validConfigs.length > 0) {
+                    console.log('Valid visualization configs:', validConfigs);
+                    await updateVisualizations(validConfigs);
+                } else {
+                    console.error('No valid visualization configs found');
+                }
+            }
+            
+            elements.questionInput.value = '';
+        } else {
+            throw new Error('Invalid response format');
+        }
 
     } catch (error) {
         console.error('AI Error:', error);
         addMessage('error', `Error: ${error.message}`);
     } finally {
-        // Hide thinking animation
         elements.questionInput.disabled = false;
         elements.askButton.disabled = false;
         elements.thinkingDots.classList.add('d-none');
@@ -268,21 +297,16 @@ function addMessage(type, content) {
 function isValidVisualizationConfig(config) {
     // Basic structure validation
     if (!config || typeof config !== 'object') return false;
-    if (!config.title || !config.series || !Array.isArray(config.series)) return false;
-
-    // Validate series data
+    
+    // Allow any valid ECharts configuration
+    // Must have at least one series
+    if (!config.series || !Array.isArray(config.series) || config.series.length === 0) return false;
+    
+    // Each series must have a type
     for (const series of config.series) {
         if (!series.type) return false;
-        
-        // Check for data based on chart type
-        if (['bar', 'line'].includes(series.type)) {
-            if (!Array.isArray(series.data) || series.data.length === 0) return false;
-            if (!config.xAxis?.data || config.xAxis.data.length === 0) return false;
-        } else if (series.type === 'scatter') {
-            if (!Array.isArray(series.data) || series.data.length === 0) return false;
-        }
     }
-
+    
     return true;
 }
 
@@ -313,10 +337,37 @@ function extractVisualizationConfig(message) {
 }
 
 async function handleVisualizationResponse(response) {
-    const configs = extractVisualizationConfig(response);
-    if (configs.length > 0) {
-        await updateVisualizations(configs);
-        return true;
+    console.log('Processing visualization response:', response);
+    
+    try {
+        let configs = [];
+        
+        // Handle both direct visualization configs and markdown-embedded configs
+        if (Array.isArray(response)) {
+            configs = response;
+        } else if (typeof response === 'string' && (response.includes('```echarts') || response.includes('```json'))) {
+            configs = extractVisualizationConfig(response);
+        }
+        
+        // Validate and clean up configs
+        configs = configs.filter(config => {
+            try {
+                return isValidVisualizationConfig(config);
+            } catch (e) {
+                console.error('Invalid visualization config:', e);
+                return false;
+            }
+        });
+        
+        if (configs.length > 0) {
+            console.log('Rendering visualizations:', configs);
+            await updateVisualizations(configs);
+            return true;
+        }
+        
+        return false;
+    } catch (error) {
+        console.error('Error processing visualization response:', error);
+        return false;
     }
-    return false;
 }

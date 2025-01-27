@@ -123,24 +123,11 @@ async function updateVisualizations(configs) {
         return;
     }
     
-    // Ensure each config has required properties
-    configs = configs.map(config => ({
-        grid: {
-            left: '3%',
-            right: '4%',
-            bottom: '15%',
-            containLabel: true
-        },
-        ...config,
-        backgroundColor: 'transparent'
-    }));
-    
     console.log('Processing visualization configs:', configs);
-    log('Starting visualization update with configs:', configs);
     
     const container = document.getElementById('visualizationContainer');
     if (!container) {
-        logError('Visualization container not found');
+        console.error('Visualization container not found');
         return;
     }
 
@@ -154,92 +141,62 @@ async function updateVisualizations(configs) {
             container.innerHTML = '';
         }
 
-        // Limit the number of charts in grid view
-        if (!isSingleView && chartInstances.length >= MAX_CHARTS) {
-            // Remove oldest charts
-            const numToRemove = configs.length;
-            const chartsToRemove = chartInstances.slice(0, numToRemove);
-            chartsToRemove.forEach(({chart, container, resizeObserver}) => {
-                if (resizeObserver) resizeObserver.disconnect();
-                if (chart) chart.dispose();
-                if (container) container.remove();
-            });
-            chartInstances = chartInstances.slice(numToRemove);
-        }
-
-        // Create new chart containers
+        // Process each configuration
         for (const config of configs) {
-            log('Creating chart with config:', config);
-            
             try {
-                const { container: chartDiv, downloadBtn, pinBtn } = createChartContainer();
+                console.log('Creating chart with config:', config);
+
+                // Create container for this chart
+                const chartDiv = document.createElement('div');
+                chartDiv.className = 'chart-container';
+                chartDiv.style.width = '100%';
+                chartDiv.style.height = '400px';  // Ensure explicit height
                 container.appendChild(chartDiv);
 
-                const chart = echarts.init(chartDiv, null, {
-                    renderer: 'canvas',
-                    useDirtyRect: true
-                });
-
-                const resizeObserver = new ResizeObserver(() => {
-                    chart.resize();
-                });
-                resizeObserver.observe(chartDiv);
-
-                chart.setOption(config);
+                // Initialize chart with explicit size
+                const chart = echarts.init(chartDiv);
                 
-                // Set up download handler
-                downloadBtn.addEventListener('click', async () => {
-                    try {
-                        downloadBtn.disabled = true;
-                        downloadBtn.innerHTML = '<i class="bi bi-hourglass-split"></i>';
-                        
-                        const dataURL = chart.getDataURL({
-                            type: 'png',
-                            pixelRatio: 2,
-                            backgroundColor: '#ffffff',
-                            excludeComponents: ['toolbox']
-                        });
-                        
-                        const title = config.title?.text || 'chart';
-                        const sanitizedTitle = title.toLowerCase().replace(/[^a-z0-9]/g, '_');
-                        const filename = `${sanitizedTitle}_${Date.now()}.png`;
-                        
-                        const link = document.createElement('a');
-                        link.download = filename;
-                        link.href = dataURL;
-                        document.body.appendChild(link);
-                        link.click();
-                        document.body.removeChild(link);
-                        
-                        downloadBtn.innerHTML = '<i class="bi bi-check-lg"></i>';
-                        setTimeout(() => {
-                            downloadBtn.innerHTML = '<i class="bi bi-download"></i>';
-                            downloadBtn.disabled = false;
-                        }, 1000);
-                    } catch (error) {
-                        logError('Error downloading chart:', error);
-                        showError('Failed to download chart');
-                        downloadBtn.innerHTML = '<i class="bi bi-download"></i>';
-                        downloadBtn.disabled = false;
-                    }
-                });
+                // Log chart initialization
+                console.log('Chart initialized:', chart);
 
-                // Set up pin handler
-                pinBtn.addEventListener('click', () => {
-                    if (pinBtn.classList.contains('pinned')) {
-                        unpinChart({ chart, container: chartDiv, config });
-                        pinBtn.classList.remove('pinned');
-                    } else {
-                        pinChart({ chart, container: chartDiv, config });
-                        pinBtn.classList.add('pinned');
-                    }
-                    updatePinnedGraphsLayout();
-                });
+                // Apply configuration with defaults
+                const enhancedConfig = {
+                    animation: false,  // Disable animation for initial render
+                    backgroundColor: 'transparent',
+                    grid: {
+                        left: '3%',
+                        right: '4%',
+                        bottom: '15%',
+                        containLabel: true
+                    },
+                    ...config,
+                    series: config.series.map(series => ({
+                        ...series,
+                        animation: false  // Disable animation for series
+                    }))
+                };
 
-                chartInstances.push({ chart, container: chartDiv, resizeObserver });
-                log('Chart created successfully');
+                // Log the final config
+                console.log('Applying chart configuration:', enhancedConfig);
+                
+                // Set the configuration
+                chart.setOption(enhancedConfig, true);  // Use true to clear previous options
+                
+                // Force a resize after setup
+                setTimeout(() => {
+                    chart.resize();
+                }, 100);
+
+                // Add to instances
+                chartInstances.push({ 
+                    chart,
+                    container: chartDiv,
+                    config: enhancedConfig
+                });
+                
+                console.log('Chart created successfully');
             } catch (error) {
-                logError('Error creating chart:', error);
+                console.error('Error creating individual chart:', error);
                 const errorDiv = document.createElement('div');
                 errorDiv.className = 'alert alert-danger';
                 errorDiv.innerHTML = `Failed to create visualization: ${error.message}`;
@@ -247,9 +204,12 @@ async function updateVisualizations(configs) {
             }
         }
 
+        // Update layout
+        updateChartLayout();
+
     } catch (error) {
-        logError('Error updating visualizations:', error);
-        showError('Failed to update visualizations');
+        console.error('Error in updateVisualizations:', error);
+        showError('Failed to update visualizations: ' + error.message);
     } finally {
         hideLoadingState();
     }
