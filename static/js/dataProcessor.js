@@ -61,8 +61,11 @@ function prepareHistogramData(data, column) {
     }
 
     try {
-        const values = validateNumericValues(data.preview.map(row => row[column]));
-        if (!values.length) return null;
+       const values = validateNumericValues(data.preview.map(row => row[column]));
+        if (!values.length) {
+            console.warn(`No valid numeric values found for column: ${column}`);
+            return null;
+        }
 
         // Create histogram bins
         const binCount = Math.min(10, Math.ceil(Math.sqrt(values.length)));
@@ -105,7 +108,10 @@ function prepareScatterData(data, columnX, columnY) {
                 !isNaN(x) && !isNaN(y)
             );
 
-        if (!pairedData.length) return null;
+       if (!pairedData.length) {
+            console.warn(`No valid paired data found for columns: ${columnX}, ${columnY}`);
+            return null;
+        }
 
         return {
             x: pairedData.map(d => d[0]),
@@ -129,11 +135,12 @@ function prepareBoxplotData(data, columns) {
             .filter(col => data.column_stats[col] && data.column_stats[col].type === 'numeric')
             .map(col => ({
                 name: col,
+               name: col,
                 stats: {
                     min: data.column_stats[col].min,
-                    q1: data.column_stats[col].q1 || data.column_stats[col].min,
+                    q1: data.column_stats[col].q1 !== undefined ? data.column_stats[col].q1 : calculatePercentile(values, 0.25),
                     median: data.column_stats[col].median,
-                    q3: data.column_stats[col].q3 || data.column_stats[col].max,
+                    q3: data.column_stats[col].q3 !== undefined ? data.column_stats[col].q3 : calculatePercentile(values, 0.75),
                     max: data.column_stats[col].max
                 }
             }));
@@ -141,6 +148,14 @@ function prepareBoxplotData(data, columns) {
         console.error('Error preparing boxplot data:', error);
         return null;
     }
+}
+
+// Helper function to calculate percentile
+function calculatePercentile(values, percentile) {
+    if (values.length === 0) return null;
+    const sortedValues = [...values].sort((a, b) => a - b);
+    const index = Math.ceil(percentile * sortedValues.length) - 1;
+    return sortedValues[index];
 }
 
 function prepareHeatmapData(data, columns) {
@@ -155,7 +170,7 @@ function prepareHeatmapData(data, columns) {
         };
 
         // Calculate correlations between numeric columns
-        for (let i = 0; i < columns.length; i++) {
+       for (let i = 0; i < columns.length; i++) {
             for (let j = 0; j < columns.length; j++) {
                 const correlation = i === j ? 1 : calculateCorrelation(
                     data.preview.map(row => row[columns[i]]),

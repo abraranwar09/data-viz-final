@@ -579,44 +579,30 @@ def prepareMultilineData(data):
         for y_col in numeric_cols[:5]:  # Limit to 5 lines for readability
             values = [
                 [row[x_col], row[y_col]]
-                for row in data['preview']
-                if row[x_col] is not None and row[y_col] is not None
-            ]
+           for row in data['preview']
+                if row[x_col] is not None and row[y_col] is not None]
+
+            # Check if values is not empty before appending
             if values:
                 series.append({
                     'name': y_col,
                     'type': 'line',
                     'data': values,
                     'smooth': True,
-                    'emphasis': {
-                        'focus': 'series'
-                    }
+                    'emphasis': {'focus': 'series'}
                 })
-        
+
+        # Check if series is not empty before returning
         if not series:
+            logger.debug(f"No series data found for multiline chart with x_col: {x_col}")
             return None
-            
+
         return {
-            'xAxis': {
-                'type': 'value' if data['column_stats'][x_col]['type'] == 'numeric' else 'time',
-                'name': x_col
-            },
-            'yAxis': {
-                'type': 'value'
-            },
+            'xAxis': {'type': 'value' if data['column_stats'][x_col]['type'] == 'numeric' else 'time', 'name': x_col},
+            'yAxis': {'type': 'value'},
             'series': series,
-            'tooltip': {
-                'trigger': 'axis',
-                'axisPointer': {
-                    'type': 'cross',
-                    'label': {
-                        'backgroundColor': '#6a7985'
-                    }
-                }
-            },
-            'legend': {
-                'data': [s['name'] for s in series]
-            }
+            'tooltip': {'trigger': 'axis', 'axisPointer': {'type': 'cross', 'label': {'backgroundColor': '#6a7985'}}},
+            'legend': {'data': [s['name'] for s in series]}
         }
     except Exception as e:
         logger.error(f"Error preparing multiline data: {str(e)}")
@@ -628,47 +614,57 @@ def prepareHistogramData(data):
         if not data or 'column_stats' not in data:
             return None
             
-        # Find first numeric column
+       # Find first numeric column
         numeric_col = next(
-            (col for col, stats in data['column_stats'].items() 
+            (col for col, stats in data['column_stats'].items()
              if stats.get('type') == 'numeric'),
             None
         )
-        
+
         if not numeric_col:
+            logger.debug("No numeric column found for histogram")
             return None
-            
+
         # Get column data
         values = [row[numeric_col] for row in data['preview'] if row[numeric_col] is not None]
         if not values:
+            logger.debug(f"No data found for column: {numeric_col}")
             return None
-            
+
         # Create histogram bins
-        min_val = data['column_stats'][numeric_col]['min']
-        max_val = data['column_stats'][numeric_col]['max']
+        try:
+            min_val = float(data['column_stats'][numeric_col]['min'])
+            max_val = float(data['column_stats'][numeric_col]['max'])
+        except KeyError as e:
+            logger.error(f"Missing key in column_stats: {e}")
+            return None
+        except ValueError as e:
+            logger.error(f"Invalid value for min/max: {e}")
+            return None
+
         bin_count = 10
         bin_width = (max_val - min_val) / bin_count
-        
+
         bins = []
         values_count = [0] * bin_count
-        
+
         for i in range(bin_count):
             bin_start = min_val + (i * bin_width)
             bin_end = bin_start + bin_width
             bins.append(f"{bin_start:.2f} - {bin_end:.2f}")
-            
+
             # Count values in this bin
-            values_count[i] = sum(1 for v in values 
-                                if bin_start <= v < bin_end or 
-                                (i == bin_count - 1 and v == max_val))
-        
+            values_count[i] = sum(1 for v in values
+                                 if bin_start <= v < bin_end or
+                                 (i == bin_count - 1 and v == max_val))
+
         return {
             'column': numeric_col,
             'bins': bins,
             'values': values_count
         }
     except Exception as e:
-        print(f"Error preparing histogram data: {str(e)}")
+        logger.error(f"Error preparing histogram data: {str(e)}")
         return None
 
 def prepareScatterData(data):
@@ -695,9 +691,10 @@ def prepareScatterData(data):
             if row[x_col] is not None and row[y_col] is not None
         ]
         
-        if not paired_data:
+       if not paired_data:
+            logger.debug(f"No paired data found for scatter plot: {x_col}, {y_col}")
             return None
-            
+
         return {
             'x': [pair[0] for pair in paired_data],
             'y': [pair[1] for pair in paired_data],
@@ -705,7 +702,7 @@ def prepareScatterData(data):
             'yLabel': y_col
         }
     except Exception as e:
-        print(f"Error preparing scatter data: {str(e)}")
+        logger.error(f"Error preparing scatter data: {str(e)}")
         return None
 
 def prepareBoxplotData(data):
@@ -741,11 +738,20 @@ def prepareBoxplotData(data):
                         'q3': stats.get('q3', values[q3_idx] if values else stats['max']),
                         'max': stats['max']
                     }
+               boxplot_data.append({
+                    'name': col,
+                    'stats': {
+                        'min': stats['min'],
+                        'q1': stats.get('q1', values[q1_idx] if values else stats['min']),
+                        'median': stats['median'],
+                        'q3': stats.get('q3', values[q3_idx] if values else stats['max']),
+                        'max': stats['max']
+                    }
                 })
-        
+
         return boxplot_data
     except Exception as e:
-        print(f"Error preparing boxplot data: {str(e)}")
+        logger.error(f"Error preparing boxplot data: {str(e)}")
         return None
 
 def prepareHeatmapData(data):
@@ -793,12 +799,12 @@ def prepareHeatmapData(data):
                 
                 correlations.append([i, j, correlation])
         
-        return {
+       return {
             'columns': numeric_cols,
             'values': correlations
         }
     except Exception as e:
-        print(f"Error preparing heatmap data: {str(e)}")
+        logger.error(f"Error preparing heatmap data: {str(e)}")
         return None
 
 @app.route('/ai/analyze', methods=['POST'])

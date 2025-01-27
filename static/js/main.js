@@ -192,15 +192,20 @@ document.addEventListener('DOMContentLoaded', function() {
                 throw new Error(data.error);
             }
             
-            // Process and visualize data
-            processUploadedData(data);
-            
+       // Process and visualize data
+            try {
+                processUploadedData(data);
+            } catch (error) {
+                console.error('Error processing uploaded data:', error);
+                showError('Failed to process uploaded data. Please check the file format.');
+            }
+
             // Display statistical insights
             insights.displayInsights(data);
-            
+
             // Update data preview
             updatePreviewTable(data);
-            
+
             // Enable share button
             document.getElementById('shareAnalysis').disabled = false;
         })
@@ -212,34 +217,34 @@ document.addEventListener('DOMContentLoaded', function() {
             uploadProgress.classList.add('d-none');
         });
     }
-    
+
     // File drag and drop handling
     dropZone.addEventListener('dragover', (e) => {
         e.preventDefault();
         dropZone.classList.add('dragover');
     });
-    
+
     dropZone.addEventListener('dragleave', () => {
         dropZone.classList.remove('dragover');
     });
-    
+
     dropZone.addEventListener('drop', (e) => {
         e.preventDefault();
         dropZone.classList.remove('dragover');
         const file = e.dataTransfer.files[0];
         handleFileUpload(file);
     });
-    
+
     fileInput.addEventListener('change', (e) => {
         const file = e.target.files[0];
         handleFileUpload(file);
     });
-    
+
     // View mode switching
     document.getElementById('gridViewBtn').addEventListener('click', () => {
         document.getElementById('visualizationContainer').className = 'visualization-grid';
     });
-    
+
     document.getElementById('singleViewBtn').addEventListener('click', () => {
         document.getElementById('visualizationContainer').className = 'visualization-single';
     });
@@ -247,10 +252,22 @@ document.addEventListener('DOMContentLoaded', function() {
 
 function processUploadedData(data) {
     try {
+        // Validate the structure of the received data
+        if (!data || typeof data !== 'object' || !data.preview || !Array.isArray(data.preview) ||
+            !data.processed_data || typeof data.processed_data !== 'object' ||
+            !data.processed_data.column_stats || typeof data.processed_data.column_stats !== 'object') {
+            throw new Error('Invalid data format received from server');
+        }
+
         // Clean up the data structure
         const cleanData = {
             ...data,
             preview: data.preview.map(row => {
+                // Ensure each row is an object
+                if (typeof row !== 'object' || row === null) {
+                    console.warn('Invalid row format. Skipping row:', row);
+                    return null;
+                }
                 // Remove the ```csv wrapper if it exists
                 const cleanRow = {};
                 Object.entries(row).forEach(([key, value]) => {
@@ -258,8 +275,13 @@ function processUploadedData(data) {
                     cleanRow[cleanKey] = value;
                 });
                 return cleanRow;
-            }),
+            }).filter(row => row !== null), // Filter out any null rows
             column_stats: Object.entries(data.processed_data.column_stats).reduce((acc, [key, value]) => {
+                // Ensure the value is an object
+                if (typeof value !== 'object' || value === null) {
+                    console.warn(`Invalid column_stats format for key: ${key}. Skipping.`);
+                    return acc;
+                }
                 const cleanKey = key.replace('```csv', '').trim();
                 acc[cleanKey] = value;
                 return acc;
@@ -271,15 +293,16 @@ function processUploadedData(data) {
 
         // Process the cleaned data
         const processedData = processData(cleanData);
-        
-        if (processedData) {
+
+        // Check if processedData is valid before proceeding
+        if (processedData && typeof processedData === 'object') {
             // Generate visualizations with both processed data and insights
             generateVisualizations({
                 processed_data: processedData,
                 statistical_insights: data.statistical_insights
             });
         } else {
-            showError('Failed to process data');
+            throw new Error('Failed to process data into a valid format');
         }
     } catch (error) {
         console.error('Error processing uploaded data:', error);
