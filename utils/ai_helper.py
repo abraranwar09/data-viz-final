@@ -381,9 +381,14 @@ def validate_visualization_suggestion(suggestion: Dict[str, Any],
             
         # Special handling for radar charts
         if suggestion["chart_type"] == "radar":
-            if not all(key in data["column_stats"] for key in [suggestion.get("x_axis", ""), suggestion.get("y_axis", "")]):
+            x_axis = suggestion.get("x_axis", "")
+            y_axis = suggestion.get("y_axis", "")
+            if not x_axis or not y_axis:
                 return False
-            return True
+            if x_axis not in data.get("column_stats", {}) or y_axis not in data.get("column_stats", {}):
+                return False
+            # Verify we have numeric data for radar
+            return data["column_stats"][y_axis].get("type") == "numeric"
             
         # Regular charts need both axes
         if suggestion["chart_type"] not in ["pie", "gauge", "funnel"]:
@@ -510,6 +515,17 @@ def validate_chart_data(chart_type: str, data: Dict[str, Any], x_axis: Optional[
                 for row in preview_data
             )
 
+        elif chart_type == 'radar':
+            if not all([x_axis, y_axis]):
+                return False
+            # Check if we have categories and numeric values
+            return all(
+                x_axis in row and y_axis in row and
+                row[x_axis] is not None and 
+                isinstance(row.get(y_axis), (int, float))
+                for row in preview_data
+            )
+            
         elif chart_type == 'graph':
             if not all([x_axis, y_axis]):
                 return False
@@ -543,7 +559,8 @@ def generate_visualization_config(
 
         # Chart types that don't need both axes
         AXISLESS_CHARTS = ['pie', 'treemap', 'sunburst', 'gauge', 'funnel']
-        if chart_type not in AXISLESS_CHARTS and not all([x_axis, y_axis]):
+        SPECIAL_CHARTS = ['radar']  # Charts with special handling
+        if chart_type not in AXISLESS_CHARTS + SPECIAL_CHARTS and not all([x_axis, y_axis]):
             logger.error(f"Missing axis fields for {chart_type} chart: {args}")
             return None
 
@@ -863,6 +880,9 @@ def generate_visualization_config(
                 return None
 
         # Enhanced graph chart
+        elif chart_type == 'radar':
+            return generate_radar_config(data, x_axis, y_axis, title)
+            
         elif chart_type == 'graph':
             try:
                 nodes = []
@@ -1619,3 +1639,49 @@ def get_visualization_configs(data: Dict[str, Any]) -> Dict[str, Any]:
     except Exception as e:
         logger.exception("Error generating visualizations")
         return {"success": False, "error": str(e)}
+def generate_radar_config(data: Dict[str, Any], x_axis: str, y_axis: str, title: str) -> Dict[str, Any]:
+    """Generate radar chart configuration."""
+    try:
+        # Get unique categories from x_axis
+        categories = list(set(str(row.get(x_axis, '')) 
+                            for row in data.get('preview', [])
+                            if row.get(x_axis) is not None))
+        
+        # Calculate average values for each category
+        values = []
+        for category in categories:
+            category_values = [
+                float(row.get(y_axis, 0))
+                for row in data.get('preview', [])
+                if str(row.get(x_axis)) == category 
+                and row.get(y_axis) is not None
+            ]
+            if category_values:
+                values.append(sum(category_values) / len(category_values))
+            else:
+                values.append(0)
+        
+        return {
+            'title': {'text': title},
+            'tooltip': {'trigger': 'item'},
+            'legend': {'textStyle': {'color': '#fff'}},
+            'radar': {
+                'indicator': [{'name': cat, 'max': max(values) * 1.2} for cat in categories],
+                'axisName': {'color': '#fff'},
+                'axisLine': {'lineStyle': {'color': 'rgba(255,255,255,0.2)'}},
+                'splitLine': {'lineStyle': {'color': 'rgba(255,255,255,0.2)'}},
+                'splitArea': {'areaStyle': {'color': 'rgba(255,255,255,0.1)'}}
+            },
+            'series': [{
+                'type': 'radar',
+                'data': [{
+                    'value': values,
+                    'name': y_axis,
+                    'itemStyle': {'color': '#37a2da'},
+                    'areaStyle': {'color': 'rgba(55,162,218,0.6)'}
+                }]
+            }]
+        }
+    except Exception as e:
+        logger.error(f"Error generating radar chart: {str(e)}")
+        return None
