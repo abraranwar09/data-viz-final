@@ -4,6 +4,18 @@ const MAX_PINNED_CHARTS = 2;
 const MAX_CHARTS = 6; // Updated to 6 as requested
 const DEBUG = true;
 
+// ECharts theme colors
+const THEME_COLORS = [
+    '#7ec2f3',  // Blue
+    '#91cc75',  // Green
+    '#fac858',  // Yellow
+    '#ee6666',  // Red
+    '#73c0de',  // Light Blue
+    '#3ba272',  // Teal
+    '#fc8452',  // Orange
+    '#9a60b4'   // Purple
+];
+
 // Add missing logging functions
 function log(...args) {
     if (DEBUG) {
@@ -283,13 +295,19 @@ function generateTreeChart(data, title) {
         });
         
         // Second pass: Create hierarchical structure
-        Object.entries(valueMap).forEach(([parent, children]) => {
+        Object.entries(valueMap).forEach(([parent, children], parentIndex) => {
             const parentNode = {
                 name: parent,
                 value: Object.values(children).reduce((a, b) => a + b, 0),
-                children: Object.entries(children).map(([child, value]) => ({
+                itemStyle: {
+                    color: THEME_COLORS[parentIndex % THEME_COLORS.length]
+                },
+                children: Object.entries(children).map(([child, value], childIndex) => ({
                     name: child,
-                    value: value
+                    value: value,
+                    itemStyle: {
+                        color: THEME_COLORS[(parentIndex + childIndex + 1) % THEME_COLORS.length]
+                    }
                 }))
             };
             result.push(parentNode);
@@ -297,7 +315,7 @@ function generateTreeChart(data, title) {
         
         return result;
     }
-
+    
     const treeData = transformData(data.preview, 'Education Level', 'Previous Default');
     
     return {
@@ -318,14 +336,14 @@ function generateTreeChart(data, title) {
             leafDepth: 1,
             levels: [{
                 itemStyle: {
-                    borderColor: '#fff',
+                    borderColor: 'rgba(40, 44, 52, 0.9)',
                     borderWidth: 2,
                     gapWidth: 2
                 }
             }, {
-                colorSaturation: [0.3, 0.6],
+                colorSaturation: [0.7, 1],
                 itemStyle: {
-                    borderColor: '#fff',
+                    borderColor: 'rgba(40, 44, 52, 0.9)',
                     borderWidth: 1,
                     gapWidth: 1
                 }
@@ -347,47 +365,6 @@ function generateCategoricalCharts(data) {
     
     // For each categorical column
     Object.entries(data.categorical).forEach(([column, stats]) => {
-        // Pie Chart
-        configs.push({
-            title: {
-                text: `Distribution of ${column}`,
-                textStyle: { color: '#fff' }
-            },
-            tooltip: {
-                trigger: 'item',
-                formatter: '{b}: {c} ({d}%)'
-            },
-            series: [{
-                type: 'pie',
-                radius: ['40%', '70%'],
-                avoidLabelOverlap: false,
-                itemStyle: {
-                    borderRadius: 10,
-                    borderColor: '#fff',
-                    borderWidth: 2
-                },
-                label: {
-                    show: true,
-                    formatter: '{b}: {c} ({d}%)',
-                    color: '#fff'
-                },
-                emphasis: {
-                    label: {
-                        show: true,
-                        fontSize: '16',
-                        fontWeight: 'bold'
-                    }
-                },
-                data: Object.entries(stats.frequencies).map(([name, value]) => ({
-                    name,
-                    value,
-                    itemStyle: {
-                        color: getColorForCategory(name)
-                    }
-                }))
-            }]
-        });
-
         // Bar Chart
         configs.push({
             title: {
@@ -413,18 +390,33 @@ function generateCategoricalCharts(data) {
                     color: '#fff',
                     rotate: 45,
                     interval: 0
+                },
+                axisLine: {
+                    lineStyle: {
+                        color: '#666'
+                    }
                 }
             },
             yAxis: {
                 type: 'value',
-                axisLabel: { color: '#fff' }
+                axisLabel: { color: '#fff' },
+                axisLine: {
+                    lineStyle: {
+                        color: '#666'
+                    }
+                },
+                splitLine: {
+                    lineStyle: {
+                        color: 'rgba(84, 91, 102, 0.2)'
+                    }
+                }
             },
             series: [{
                 type: 'bar',
-                data: Object.entries(stats.frequencies).map(([name, value]) => ({
+                data: Object.entries(stats.frequencies).map(([name, value], index) => ({
                     value,
                     itemStyle: {
-                        color: getColorForCategory(name)
+                        color: THEME_COLORS[index % THEME_COLORS.length]
                     }
                 })),
                 label: {
@@ -432,6 +424,47 @@ function generateCategoricalCharts(data) {
                     position: 'top',
                     color: '#fff'
                 }
+            }]
+        });
+
+        // Pie Chart
+        configs.push({
+            title: {
+                text: `Distribution of ${column}`,
+                textStyle: { color: '#fff' }
+            },
+            tooltip: {
+                trigger: 'item',
+                formatter: '{b}: {c} ({d}%)'
+            },
+            series: [{
+                type: 'pie',
+                radius: ['40%', '70%'],
+                avoidLabelOverlap: false,
+                itemStyle: {
+                    borderRadius: 10,
+                    borderColor: 'rgba(40, 44, 52, 0.9)',
+                    borderWidth: 2
+                },
+                label: {
+                    show: true,
+                    formatter: '{b}: {c} ({d}%)',
+                    color: '#fff'
+                },
+                emphasis: {
+                    label: {
+                        show: true,
+                        fontSize: '16',
+                        fontWeight: 'bold'
+                    }
+                },
+                data: Object.entries(stats.frequencies).map(([name, value], index) => ({
+                    name,
+                    value,
+                    itemStyle: {
+                        color: THEME_COLORS[index % THEME_COLORS.length]
+                    }
+                }))
             }]
         });
     });
