@@ -30,139 +30,77 @@ function initializeFileHandlers() {
 }
 
 async function handleFile(file) {
-    const progressBar = document.querySelector('.progress-bar');
-    const progressDiv = document.getElementById('uploadProgress');
-    const errorAlert = document.getElementById('errorAlert');
-    const shareButton = document.getElementById('shareAnalysis');
+    console.log('Handling file upload');
 
-    // Reset UI state
-    progressDiv.classList.add('d-none');
-    errorAlert.classList.add('d-none');
-    shareButton.disabled = true;
-
-    // Client-side validation
-    if (!file) {
-        showError('Please select a file to upload');
-        return;
-    }
-
-    // Check file size
-    const maxSize = 50 * 1024 * 1024; // 50MB
-    if (file.size > maxSize) {
-        showError(`File size exceeds maximum limit of 50MB. Your file is ${(file.size / 1024 / 1024).toFixed(2)}MB`);
-        return;
-    }
-
-    // Check if file is empty
-    if (file.size === 0) {
-        showError('The selected file is empty');
-        return;
-    }
-
-    // Check file extension
-    const allowedExtensions = ['csv', 'xlsx', 'xls', 'json', 'tsv', 'txt'];
-    const extension = file.name.split('.').pop().toLowerCase();
-    if (!allowedExtensions.includes(extension)) {
-        showError(`Invalid file type. Allowed types are: ${allowedExtensions.join(', ')}`);
-        return;
-    }
-
-    // Show progress bar
-    progressDiv.classList.remove('d-none');
-    progressBar.style.width = '0%';
-    progressBar.setAttribute('aria-valuenow', 0);
+    const elements = {
+        progressBar: document.querySelector('.progress-bar'),
+        errorAlert: document.getElementById('uploadErrorAlert'),
+        uploadProgress: document.getElementById('uploadProgress')
+    };
 
     const formData = new FormData();
     formData.append('file', file);
 
+    // Reset error alert and show progress bar
+    elements.errorAlert.classList.add('d-none');
+    elements.progressBar.style.width = '0%';
+    elements.uploadProgress.classList.remove('d-none');
+
     try {
-        const xhr = new XMLHttpRequest();
-        xhr.open('POST', '/upload', true);
-        
-        // Track upload progress
-        xhr.upload.onprogress = (e) => {
-            if (e.lengthComputable) {
-                const percentComplete = (e.loaded / e.total) * 100;
-                progressBar.style.width = percentComplete + '%';
-                progressBar.setAttribute('aria-valuenow', percentComplete);
-            }
-        };
+        const response = await fetch('/upload', {
+            method: 'POST',
+            body: formData
+        });
 
-        // Handle response
-        xhr.onload = async function() {
-            try {
-                let response;
-                try {
-                    response = JSON.parse(xhr.responseText);
-                } catch (parseError) {
-                    throw new Error(`Error parsing server response: ${parseError.message}`);
+        if (!response.ok) {
+            throw new Error('Failed to upload file');
+        }
+
+        let data = await response.json();
+        data = sanitizeJsonData(data);  // Ensure the data is sanitized
+
+        const analysisResponse = await fetch('/ai/analyze', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                question: "Perform an initial analysis of this dataset. Create multiple visualizations that best represent the key relationships and patterns in the data. Focus on the most important insights and provide a clear explanation of your findings.",
+                context: {
+                    data: data,
+                    type: 'initial_analysis'
                 }
-                
-                if (xhr.status !== 200) {
-                    throw new Error(response?.error || 'Upload failed');
-                }
+            })
+        });
 
-                // Update application state
-                window.appState.currentData = response;
-                
-                // Update UI
-                updateDataStats(response);
-                updatePreviewTable(response.preview);
-                
-                // Generate initial analysis through GPT
-                try {
-                    const analysisResponse = await fetch('/ai/analyze', {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json'
-                        },
-                        body: JSON.stringify({
-                            question: "Perform an initial analysis of this dataset. Create multiple visualizations that best represent the key relationships and patterns in the data. Focus on the most important insights and provide a clear explanation of your findings.",
-                            context: {
-                                data: response,
-                                type: 'initial_analysis'
-                            }
-                        })
-                    });
+        if (!analysisResponse.ok) {
+            throw new Error('Failed to generate initial analysis');
+        }
 
-                    if (!analysisResponse.ok) {
-                        throw new Error('Failed to generate initial analysis');
-                    }
+        let result = await analysisResponse.json();
+        result = sanitizeJsonData(result);  // Sanitize result before using it
 
-                    const result = await analysisResponse.json();
-                    if (result?.response?.answer) {
-                        addMessage('assistant', result.response.answer);
-                    }
-                } catch (analysisError) {
-                    console.error('Error generating initial analysis:', analysisError);
-                    addMessage('error', 'Failed to generate initial analysis');
-                }
-                
-                shareButton.disabled = false;
-                progressDiv.classList.add('d-none');
-                
-            } catch (error) {
-                console.error('Error:', error);
-                showError(error.message);
-                shareButton.disabled = true;
-            }
-            progressDiv.classList.add('d-none');
-        };
+        if (result?.response?.answer) {
+            addMessage('assistant', result.response.answer);
+        }
 
-        // Handle network errors
-        xhr.onerror = function() {
-            showError('Network error occurred while uploading the file');
-            progressDiv.classList.add('d-none');
-            shareButton.disabled = true;
-        };
-
-        xhr.send(formData);
-    } catch (error) {
-        console.error('Error:', error);
-        showError(error.message);
-        progressDiv.classList.add('d-none');
-        shareButton.disabled = true;
+    } catch (err) {
+        console.error('Error:', err);
+        elements.errorAlert.classList.remove('d-none');
+        elements.errorAlert.textContent = err.message || 'Failed to process file';
+    } finally {
+        // Hide progress bar
+        elements.uploadProgress.classList.add('d-none');
     }
+}
+
+function sanitizeJsonData(data) {
+    if (typeof data === 'number') return isNaN(data) ? null : data;
+    if (Array.isArray(data)) return data.map(sanitizeJsonData);
+    if (typeof data === 'object' && data !== null) {
+        return Object.fromEntries(Object.entries(data).map(([k, v]) => [k, sanitizeJsonData(v)]));
+    }
+    return data;
 }
 
 function showError(message) {

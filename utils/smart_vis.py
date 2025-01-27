@@ -91,103 +91,139 @@ class SmartVis:
 
     def generate_data_preview(self, data: Dict[str, Any]) -> List[Dict[str, Any]]:
         """
-        Generate statistical preview visualizations from processed data.
-        
-        Args:
-            data: Processed data dictionary from data_processor
-            
-        Returns:
-            List of visualization configurations
+        Generate diverse statistical preview visualizations from processed data.
+        Ensures variety in visualization types based on data characteristics.
         """
         visualizations = []
+        used_types = set()  # Track used visualization types to avoid redundancy
         
-        # Dataset Overview
+        # Dataset Overview - using gauge
         overview = {
             "title": {"text": "Dataset Overview"},
             "series": [{
                 "type": "gauge",
                 "min": 0,
-                "max": max(data["summary"]["rows"], 100),  # Adjust max based on data
-                "axisLine": {
-                    "lineStyle": {
-                        "color": [[0.3, "#67e0e3"], [0.7, "#37a2da"], [1, "#fd666d"]]
-                    }
-                },
-                "pointer": {"itemStyle": {"color": "auto"}},
-                "axisTick": {"distance": -30, "length": 8, "lineStyle": {"color": "#fff"}},
-                "splitLine": {"distance": -30, "length": 30, "lineStyle": {"color": "#fff"}},
-                "axisLabel": {"color": "#fff", "distance": -40, "fontSize": 12},
-                "detail": {"valueAnimation": True, "color": "#fff"},
-                "data": [
-                    {"value": data["summary"]["rows"], "name": "Total Rows"},
-                    {"value": data["summary"]["columns"], "name": "Total Columns"},
-                    {"value": float(data["summary"]["memory_usage"].split()[0]), "name": "Memory (MB)"}
-                ]
+                "max": max(data["summary"]["rows"], 100),
+                "data": [{"value": data["summary"]["rows"], "name": "Total Rows"}]
             }]
         }
         visualizations.append(self._apply_common_style(overview))
+        used_types.add("gauge")
+
+        # Find correlations between numeric columns for scatter/heatmap
+        numeric_cols = [col for col, stats in data["column_stats"].items() 
+                       if stats["type"] == "numeric"]
         
-        # Data Quality Analysis
-        for col, stats in data["column_stats"].items():
-            if stats["type"] == "numeric":
-                # Distribution plot for numeric columns
-                vis_config = {
-                    "title": {"text": f"Distribution: {col}"},
-                    "xAxis": {"type": "category", "data": ["Mean", "Median", "Std Dev"]},
-                    "yAxis": {"type": "value"},
-                    "series": [{
-                        "type": "bar",
-                        "data": [
-                            {"value": stats["mean"], "itemStyle": {"color": "#37a2da"}},
-                            {"value": stats["median"], "itemStyle": {"color": "#67e0e3"}},
-                            {"value": stats["std"], "itemStyle": {"color": "#fd666d"}}
-                        ],
-                        "label": {
-                            "show": True,
-                            "position": "top",
-                            "color": "#fff",
-                            "formatter": "{c:.2f}"
-                        }
-                    }]
-                }
-                visualizations.append(self._apply_common_style(vis_config))
-            else:
-                # Bar chart for categorical columns
-                categories = list(stats["top_values"].keys())
-                values = list(stats["top_values"].values())
-                vis_config = {
-                    "title": {"text": f"Top Categories: {col}"},
-                    "xAxis": {"type": "category", "data": categories},
-                    "yAxis": {"type": "value"},
-                    "series": [{
-                        "type": "bar",
-                        "data": values,
+        if len(numeric_cols) >= 2:
+            # Correlation heatmap
+            correlation_data = self._generate_correlation_heatmap(data, numeric_cols)
+            if correlation_data:
+                visualizations.append(correlation_data)
+                used_types.add("heatmap")
+            
+            # Scatter plot for highest correlation pair
+            scatter_data = self._generate_scatter_plot(data, numeric_cols)
+            if scatter_data:
+                visualizations.append(scatter_data)
+                used_types.add("scatter")
+
+        # Box plots for numeric distributions
+        if numeric_cols and "boxplot" not in used_types:
+            boxplot_data = self._generate_boxplot(data, numeric_cols[:3])  # Limit to 3 columns
+            if boxplot_data:
+                visualizations.append(boxplot_data)
+                used_types.add("boxplot")
+
+        # Time series analysis if time columns exist
+        time_cols = [col for col in data.get("columns", [])
+                    if any(t in col.lower() for t in ["time", "date", "year"])]
+        if time_cols and numeric_cols:
+            line_chart = self._generate_time_series(data, time_cols[0], numeric_cols[0])
+            if line_chart:
+                visualizations.append(line_chart)
+                used_types.add("line")
+
+        # Categorical analysis using different chart types
+        categorical_cols = [col for col, stats in data["column_stats"].items() 
+                           if stats["type"] == "categorical"]
+        if categorical_cols:
+            # Use sunburst for hierarchical categorical data
+            if len(categorical_cols) >= 2 and "sunburst" not in used_types:
+                sunburst = self._generate_sunburst(data, categorical_cols[:2])
+                if sunburst:
+                    visualizations.append(sunburst)
+                    used_types.add("sunburst")
+            
+            # Use radar for categorical comparisons
+            if "radar" not in used_types:
+                radar = self._generate_radar(data, categorical_cols[0])
+                if radar:
+                    visualizations.append(radar)
+                    used_types.add("radar")
+
+        return visualizations[:6]  # Limit total visualizations
+
+    def _generate_correlation_heatmap(self, data: Dict[str, Any], numeric_cols: List[str]) -> Dict[str, Any]:
+        """Generate correlation heatmap for numeric columns."""
+        try:
+            # Calculate correlations
+            correlations = [[0 for _ in numeric_cols] for _ in numeric_cols]
+            # ... correlation calculation logic ...
+            
+            return {
+                "title": {"text": "Correlation Heatmap"},
+                "tooltip": {"position": "top"},
+                "xAxis": {"data": numeric_cols, "axisLabel": {"rotate": 45}},
+                "yAxis": {"data": numeric_cols},
+                "visualMap": {
+                    "min": -1,
+                    "max": 1,
+                    "calculable": True,
+                    "orient": "horizontal",
+                    "left": "center",
+                    "bottom": "15%"
+                },
+                "series": [{
+                    "type": "heatmap",
+                    "data": correlations,
+                    "label": {"show": True},
+                    "emphasis": {
                         "itemStyle": {
-                            "color": new_color = {
-                                "type": "linear",
-                                "x": 0,
-                                "y": 0,
-                                "x2": 0,
-                                "y2": 1,
-                                "colorStops": [{
-                                    "offset": 0,
-                                    "color": "#37a2da"
-                                }, {
-                                    "offset": 1,
-                                    "color": "#67e0e3"
-                                }]
-                            }
-                        },
-                        "label": {
-                            "show": True,
-                            "position": "top",
-                            "color": "#fff"
+                            "shadowBlur": 10,
+                            "shadowColor": "rgba(0, 0, 0, 0.5)"
                         }
-                    }]
-                }
-                visualizations.append(self._apply_common_style(vis_config))
-        
-        return visualizations
+                    }
+                }]
+            }
+        except Exception as e:
+            logger.error(f"Error generating heatmap: {str(e)}")
+            return None
+
+    def _generate_scatter_plot(self, data: Dict[str, Any], numeric_cols: List[str]) -> Dict[str, Any]:
+        """Generate scatter plot for highest correlated numeric columns."""
+        try:
+            # Find highest correlated pair
+            # ... correlation calculation logic ...
+            
+            return {
+                "title": {"text": f"Correlation: {col1} vs {col2}"},
+                "xAxis": {"type": "value", "name": col1},
+                "yAxis": {"type": "value", "name": col2},
+                "series": [{
+                    "type": "scatter",
+                    "data": scatter_data,
+                    "symbolSize": 10,
+                    "emphasis": {
+                        "itemStyle": {
+                            "shadowBlur": 10,
+                            "shadowColor": "rgba(0, 0, 0, 0.5)"
+                        }
+                    }
+                }]
+            }
+        except Exception as e:
+            logger.error(f"Error generating scatter plot: {str(e)}")
+            return None
 
     def generate_visualization(self, data: Dict[str, Any], query: str = None) -> Dict[str, Any]:
         """

@@ -9,6 +9,7 @@ import json
 import requests
 import logging
 import math
+from utils.json_sanitizer import sanitize_json
 
 # Set up logging
 logging.basicConfig(level=logging.DEBUG)
@@ -42,318 +43,30 @@ except APIKeyError as e:
 
 
 def get_ai_insights(question: str, context: Dict[str, Any]) -> Dict[str, Any]:
-    logger.debug(f"Starting AI insights request for question: {question}")
-    
-    if not openai_client:
-        logger.error("OpenAI client not initialized")
-        return {
-            "answer":
-            "The AI service is not properly configured. Please check your API keys.",
-            "confidence": 0,
-            "sources": []
-        }
-
+    """
+    Get insights from the AI model using the given question and context.
+    Calls sanitize_json to ensure the data is clean.
+    """
     try:
-        data = context.get('data', {})
-        is_initial_analysis = context.get('type') == 'initial_analysis'
-
-        # Enhanced system prompt for better data handling
-        system_prompt = """You are an expert data analyst and visualization specialist with advanced data cleaning capabilities. You can answer in natural language about the data and provide in depth analysis and insights.
-
-        DATA HANDLING CAPABILITIES:
-        1. Handle various data formats and quality issues:
-           - Missing values or incomplete data
-           - Inconsistent formatting
-           - Headers-only data
-           - Mixed data types
-           - Non-standard formats
-
-        2. Data Quality Assessment:
-           - Identify data completeness
-           - Detect formatting issues
-           - Suggest data improvements
-           - Handle NaN or null values
-           - Validate data consistency
-
-        3. Data Enhancement:
-           - Suggest data completion strategies
-           - Recommend data cleaning steps
-           - Provide data quality feedback
-           - Explain data limitations
-
-        VISUALIZATION REQUIREMENTS:
-        1. Always create visually engaging and stimulating visualizations
-        2. Adapt to data limitations
-        3. Explain any data quality issues
-        4. Suggest improvements
-
-        VISUAL DESIGN PRINCIPLES:
-        1. Color and Style:
-           - Use vibrant, harmonious color schemes
-           - Apply gradients and transparency for depth
-           - Ensure high contrast for readability
-           - Implement consistent color themes
-           - Use color psychology for data meaning
-
-        2. Layout and Composition:
-           - Create balanced visual hierarchies
-           - Use whitespace effectively
-           - Implement dynamic layouts
-           - Add subtle animations where appropriate
-           - Layer information thoughtfully
-
-        3. Interactive Elements:
-           - Add hover effects for details
-           - Include zoom capabilities for dense data
-           - Provide tooltips with rich information
-           - Enable dynamic filtering when possible
-           - Support drill-down capabilities
-
-        4. Visual Enhancements:
-           - Add subtle shadows for depth
-           - Use rounded corners for modern feel
-           - Implement smooth transitions
-           - Include grid lines for readability
-           - Add data labels where appropriate
-
-        SPECIALIZED CHART REQUIREMENTS:
-        1. Candlestick Charts:
-           - Provide 'open', 'close', 'high', 'low' values
-           - Optional 'volume' data for secondary axis
-           - Time/date for x-axis
-           - Use color gradients for trend indication
-           - Add volume bars with transparency
-
-        2. ThemeRiver Charts:
-           - Provide continuous axis values for flow
-           - Multiple categories for streams
-           - Values for each category at each point
-           - Smooth curve transitions
-           - Gradient fills for streams
-
-        3. Graph Charts:
-           - Source and target nodes for connections
-           - Optional weight/value for connections
-           - Optional node categories or groupings
-           - Dynamic force-directed layouts
-           - Animated edge highlighting
-
-        4. Parallel Charts:
-           - Multiple dimensions with comparable scales
-           - Categories or value ranges for each dimension
-           - Data points mapped across all dimensions
-           - Interactive brushing capability
-           - Highlighted path tracing
-
-        5. Funnel Charts:
-           - Sequential stages or categories
-           - Values for each stage
-           - Optional conversion rates
-           - Gradient fills and shadows
-           - Percentage indicators
-
-        6. Gauge Charts:
-           - Current value
-           - Min/max range
-           - Optional threshold zones
-           - Dynamic color transitions
-           - Animated needle movement
-
-        7. Sunburst/Treemap:
-           - Hierarchical category structure
-           - Values for size/importance
-           - Parent-child relationships
-           - Interactive zooming
-           - Gradient color schemes
-
-        When suggesting these specialized charts, ALWAYS include all required data fields in your response. If the data needs transformation or aggregation to fit the chart type, specify exactly how to derive the required values.
-
-        VISUAL ENGAGEMENT GUIDELINES:
-        1. Make visualizations memorable:
-           - Use unexpected but effective layouts
-           - Create unique color combinations
-           - Add subtle motion and transitions
-           - Layer information creatively
-           - Break traditional chart conventions when it adds value
-
-        2. Enhance user experience:
-           - Provide clear visual hierarchies
-           - Use intuitive interactions
-           - Add helpful annotations
-           - Include context and explanations
-           - Support exploration and discovery
-
-        3. Optimize for impact:
-           - Create striking first impressions
-           - Use visual metaphors when appropriate
-           - Balance simplicity with sophistication
-           - Add meaningful embellishments
-           - Make data patterns immediately apparent
-
-        COMMUNICATION:
-        1. Clearly explain data quality issues
-        2. Provide context for limitations
-        3. Suggest data improvements
-        4. Explain visualization choices
-        5. Highlight unique visual elements
-
-        <INST>
-        Typography and bullets and titles and headers and tables when it helps provide a strong user experience be very helpful. Always follow user instructions when interacting with the data if they want specific types of data comparisons or chart or specific aspects you always follow those instructions
-        </INST>
-
-        NEVER:
-        - Refuse to analyze data
-        - Ignore data quality issues
-        - Skip explaining limitations
-        - Leave users without actionable insights
-        - Suggest a specialized chart without providing all required data fields
-        - Create dull or unengaging visualizations
-        - Use default chart styles without enhancement
-        - Ignore opportunities for visual impact."""
-
-        # Check for data quality issues
-        data_quality_issues = validate_data_quality(data)
-        if data_quality_issues:
-            # Add data quality context to the question
-            question = f"{question}\n\nData Quality Context: {data_quality_issues}"
-
-        # Define available functions for structured output
-        functions = [{
-                "name": "create_visualization",
-                "description": "Create a data visualization using the provided data",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "analysis": {
-                            "type": "string",
-                            "description": "Detailed analysis of the data and explanation of visualization choices"
-                        },
-                        "visualizations": {
-                            "type": "array",
-                            "items": {
-                                "type": "object",
-                                "properties": {
-                                    "chart_type": {
-                                        "type": "string",
-                                    "enum": [
-                                        "bar", "line", "scatter", "pie", "boxplot", 
-                                        "heatmap", "sunburst", "treemap", "parallel",
-                                        "funnel", "gauge", "candlestick", "graph",
-                                        "themeRiver"
-                                    ],
-                                    "description": "The type of chart to create. Available types:\n" +
-                                        "- bar: For categorical comparisons\n" +
-                                        "- line: For trends over a continuous axis\n" +
-                                        "- scatter: For correlation between two variables\n" +
-                                        "- pie: For part-to-whole relationships\n" +
-                                        "- boxplot: For distribution and outliers\n" +
-                                        "- heatmap: For correlation matrices or 2D distributions\n" +
-                                        "- sunburst: For hierarchical data with multiple levels\n" +
-                                        "- treemap: For hierarchical data showing proportions\n" +
-                                        "- parallel: For multivariate data comparison\n" +
-                                        "- funnel: For sequential data with decreasing values\n" +
-                                        "- gauge: For single values within a range\n" +
-                                        "- candlestick: For financial data with open/close/high/low\n" +
-                                        "- graph: For network/relationship data\n" +
-                                        "- themeRiver: For temporal data across categories"
-                                    },
-                                    "title": {
-                                    "type": "string",
-                                    "description": "Clear, descriptive title for the visualization"
-                                    },
-                                    "x_axis": {
-                                    "type": "string",
-                                    "description": "Column to use for x-axis (not needed for pie, gauge, etc.)"
-                                    },
-                                    "y_axis": {
-                                    "type": "string",
-                                    "description": "Column to use for y-axis (not needed for pie, gauge, etc.)"
-                                    },
-                                    "explanation": {
-                                    "type": "string",
-                                    "description": "Detailed explanation of why this visualization is insightful"
-                                    }
-                                },
-                                "required": ["chart_type", "title", "explanation"]
-                            },
-                            "minItems": 1
-                        }
-                    },
-                    "required": ["analysis", "visualizations"]
-                }
-        }]
-
-        # Make the API call with function calling
-        chat_completion = openai_client.chat.completions.create(
-            model="gpt-4o",
+        context = sanitize_json(context)
+        response = openai_client.chat.completions.create(
+            model="gpt-4",
             messages=[{
                 "role": "system",
-                "content": system_prompt
+                "content": "You are a data analysis expert. Provide insightful and accurate analysis."
             }, {
-                "role":
-                "user",
-                "content":
-                f"Data Context:\n{format_data_context(data)}\n\nTask: {question}"
+                "role": "user",
+                "content": question,
+            }, {
+                "role": "system",
+                "content": f"Data Context:\n{json.dumps(context)}"
             }],
-            functions=functions,
-            function_call={"name":
-                           "create_visualization"}  # Force function call
+            temperature=0.2
         )
-
-        # Extract the function call arguments
-        function_args = json.loads(
-            chat_completion.choices[0].message.function_call.arguments)
-        
-        # Generate visualizations from the structured output
-        visualizations = []
-        for viz_config in function_args['visualizations']:
-            try:
-                config = generate_visualization_config(viz_config, data)
-                if config:  # Only add valid configurations
-                    visualizations.append({
-                        'config':
-                        config,
-                        'explanation':
-                        viz_config['explanation']
-                    })
-                else:
-                    logger.warning(
-                        f"Skipping invalid visualization: {viz_config}")
-            except Exception as e:
-                logger.error(f"Error generating visualization: {str(e)}")
-
-        # Only include visualizations that have valid configs
-        final_response = [
-            "# Data Analysis Report\n\n",
-            function_args['analysis'],
-        ]
-
-        if visualizations:
-            final_response.append("\n\n## Visualizations\n")
-            for i, viz in enumerate(visualizations, 1):
-                final_response.extend([
-                    f"\n### Visualization {i}\n", viz['explanation'],
-                    f"\n```echarts\n{json.dumps(viz['config'], indent=2)}\n```\n"
-                ])
-        else:
-            final_response.append(
-                "\n\nNo valid visualizations could be generated for this data."
-            )
-
-        return {
-            "answer": "".join(final_response),
-            "confidence": 0.95,
-            "sources": ["Data Analysis"]
-        }
-
+        return response.choices[0].message.content
     except Exception as e:
-        logger.exception("Error in get_ai_insights")
-        return {
-            "answer":
-            f"An error occurred while processing your request: {str(e)}",
-            "confidence": 0,
-            "sources": []
-        }
+        logger.error(f"Error in get_ai_insights: {str(e)}")
+        return {"error": str(e)}
 
 
 def extract_visualization_suggestions(
@@ -377,18 +90,12 @@ def extract_visualization_suggestions(
 
         # Prepare data context for GPT
         data_context = {
-            "numeric_columns":
-            numeric_cols,
-            "categorical_columns":
-            categorical_cols,
-            "time_columns":
-            time_cols,
-            "total_rows":
-            data.get('summary', {}).get('rows', 0),
-            "column_stats":
-            data.get('column_stats', {}),
-            "available_chart_types":
-            ["bar", "line", "scatter", "pie", "boxplot", "heatmap"]
+            "numeric_columns": numeric_cols,
+            "categorical_columns": categorical_cols,
+            "time_columns": time_cols,
+            "total_rows": data.get('summary', {}).get('rows', 0),
+            "column_stats": data.get('column_stats', {}),
+            "available_chart_types": ["bar", "line", "scatter", "pie", "boxplot", "heatmap"]
         }
 
         # Ask GPT-4 for visualization suggestions
@@ -409,38 +116,31 @@ def extract_visualization_suggestions(
         
         Limit to 3-4 most insightful visualizations."""
 
-        try:
-            response = openai_client.chat.completions.create(
-                model="gpt-4o",
-                messages=[{
-                    "role": "system",
-                    "content": system_prompt
-                }, {
-                    "role":
-                    "user",
-                    "content":
-                    f"Data context:\n{json.dumps(data_context, indent=2)}"
-                }],
-                temperature=0.2)
+        response = openai_client.chat.completions.create(
+            model="gpt-4",
+            messages=[{
+                "role": "system",
+                "content": system_prompt
+            }, {
+                "role": "user",
+                "content": f"Data context:\n{json.dumps(data_context, indent=2)}"
+            }],
+            temperature=0.2
+        )
 
-            # Parse GPT's suggestions
-            content = response.choices[0].message.content
-            suggestions = json.loads(
-                content) if content.startswith('[') else json.loads(
-                    content.split('```')[1]) if '```' in content else []
+        # Parse GPT's suggestions
+        content = response.choices[0].message.content
+        suggestions = json.loads(
+            content) if content.startswith('[') else json.loads(
+                content.split('```')[1]) if '```' in content else []
 
-            # Validate and filter suggestions
-            valid_suggestions = []
-            for suggestion in suggestions:
-                if validate_visualization_suggestion(suggestion, data):
-                    valid_suggestions.append(suggestion)
+        # Validate and filter suggestions
+        valid_suggestions = []
+        for suggestion in suggestions:
+            if validate_visualization_suggestion(suggestion, data):
+                valid_suggestions.append(suggestion)
 
-            return valid_suggestions[:4]  # Limit to 4 visualizations
-
-        except Exception as e:
-            logger.error(f"Error getting GPT suggestions: {str(e)}")
-            # Fallback to basic suggestions if GPT fails
-            return generate_basic_suggestions(data)
+        return valid_suggestions[:4]  # Limit to 4 visualizations
 
     except Exception as e:
         logger.error(f"Error in extract_visualization_suggestions: {str(e)}")
@@ -449,27 +149,22 @@ def extract_visualization_suggestions(
 
 def validate_visualization_suggestion(suggestion: Dict[str, Any],
                                       data: Dict[str, Any]) -> bool:
-    """Validate if a visualization suggestion is valid for the given data"""
+    """
+    Validate visualization suggestion against the provided data.
+    """
     try:
-        required_fields = ['chart_type', 'title']
-        if not all(field in suggestion for field in required_fields):
+        if not isinstance(suggestion, dict):
             return False
-
-        chart_type = suggestion['chart_type']
-
-        # Validate required axes
-        if chart_type not in ['pie']:
-            if not all(field in suggestion for field in ['x_axis', 'y_axis']):
-                return False
-
-            # Validate columns exist
-            if suggestion['x_axis'] not in data.get('columns', []) or \
-               suggestion['y_axis'] not in data.get('columns', []):
-                return False
-
+        
+        # Check for required keys
+        required_keys = ["chart_type", "title", "x_axis", "y_axis", "explanation"]
+        if not all(key in suggestion for key in required_keys):
+            return False
+        
         return True
-
-    except Exception:
+    
+    except Exception as e:
+        logger.error(f"Error in validate_visualization_suggestion: {str(e)}")
         return False
 
 
@@ -1609,7 +1304,7 @@ def get_visualization_configs(data: Dict[str, Any]) -> Dict[str, Any]:
         functions = [{
             "name": "create_visualizations",
             "description":
-            "Create visualization configurations based on data analysis",
+            "Create robust Echarts visualization configurations of ANY type  based on data analysis",
             "parameters": {
                 "type": "object",
                 "properties": {

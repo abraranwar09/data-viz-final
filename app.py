@@ -14,6 +14,7 @@ from sqlalchemy import text
 import sys
 import logging
 from dotenv import load_dotenv
+from utils.json_sanitizer import sanitize_json
 
 # Set up logging
 logging.basicConfig(level=logging.DEBUG)
@@ -808,7 +809,9 @@ def analyze_data():
         if not data:
             logger.error("No JSON data received")
             return jsonify({'error': 'No JSON data received'}), 400
-            
+        
+        data = sanitize_json(data)  # Sanitize received data
+        
         question = data.get('question')
         context = data.get('context')
         
@@ -820,9 +823,10 @@ def analyze_data():
             return jsonify({'error': 'Missing required parameters'}), 400
 
         response = get_ai_insights(question, context)
-        logger.debug(f"AI Response: {json.dumps(response)[:200]}...")
+        sanitized_response = sanitize_json(response)  # Sanitize response before sending
+        logger.debug(f"AI Response: {json.dumps(sanitized_response)[:200]}...")
         
-        return jsonify({'response': response})
+        return jsonify({'response': sanitized_response})
     except Exception as e:
         logger.exception("Error in AI analysis")
         return jsonify({'error': f'Error processing request: {str(e)}'}), 500

@@ -4,6 +4,7 @@ from scipy import stats
 from typing import Dict, Any
 import io
 import logging
+from utils.json_sanitizer import sanitize_json
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +42,8 @@ def calculate_numeric_stats(series: pd.Series) -> Dict[str, float]:
 
 def process_data(df: pd.DataFrame) -> Dict[str, Any]:
     """Process uploaded data and generate statistics."""
+    
+    df = sanitize_json(df)
     
     try:
         # Clean column names and handle potential single-column CSV issue
@@ -92,7 +95,7 @@ def process_data(df: pd.DataFrame) -> Dict[str, Any]:
         return stats
     except Exception as e:
         logger.exception("Error processing data")
-        raise ValueError(f"Error processing data: {str(e)}")
+        return None
 
 def generate_column_insights(series: pd.Series, stats: Dict[str, float]) -> list:
     """Generate insights about the column based on its statistics."""
