@@ -55,39 +55,192 @@ def get_ai_insights(question: str, context: Dict[str, Any]) -> Dict[str, Any]:
         is_viz_request = any(keyword in question.lower() for keyword in viz_keywords)
         
         if is_viz_request:
-            system_prompt = """You are a data visualization expert. When asked to create visualizations:
-            1. Return an ECharts configuration in ```echarts format
-            2. Only use supported chart types: bar, line, scatter, pie, boxplot, heatmap, radar
-            3. Include explanations for why the visualization is appropriate"""
+            chart_configs = []
+            
+            # 1. First try GPT-4 function calling approach
+            try:
+                viz_configs = get_visualization_configs(context)
+                if viz_configs.get("visualizations"):
+                    for viz in viz_configs["visualizations"]:
+                        config = generate_visualization_config(viz, context)
+                        if config:
+                            chart_configs.append(config)
+            except Exception as e:
+                logger.error(f"Primary visualization attempt failed: {str(e)}")
+            
+            # 2. If no charts yet, try basic suggestions
+            if not chart_configs:
+                try:
+                    basic_suggestions = generate_basic_suggestions(context)
+                    for suggestion in basic_suggestions:
+                        config = generate_visualization_config(suggestion, context)
+                        if config:
+                            chart_configs.append(config)
+                except Exception as e:
+                    logger.error(f"Basic suggestions failed: {str(e)}")
+            
+            # 3. If still no charts, force a simple visualization
+            if not chart_configs:
+                try:
+                    # Get any numeric column
+                    numeric_cols = [
+                        col for col, stats in context.get('column_stats', {}).items()
+                        if stats.get('type') == 'numeric'
+                    ]
+                    
+                    if numeric_cols:
+                        # Create a simple bar chart of the first numeric column
+                        simple_config = {
+                            'chart_type': 'bar',
+                            'title': f'Distribution of {numeric_cols[0]}',
+                            'x_axis': numeric_cols[0],
+                            'y_axis': 'value',
+                            'explanation': 'Basic distribution visualization'
+                        }
+                        config = generate_visualization_config(simple_config, context)
+                        if config:
+                            chart_configs.append(config)
+                    else:
+                        # If no numeric columns, use first categorical column as pie chart
+                        categorical_cols = [
+                            col for col, stats in context.get('column_stats', {}).items()
+                            if stats.get('type') == 'categorical'
+                        ]
+                        if categorical_cols:
+                            simple_config = {
+                                'chart_type': 'pie',
+                                'title': f'Distribution of {categorical_cols[0]}',
+                                'x_axis': categorical_cols[0],
+                                'explanation': 'Basic categorical distribution'
+                            }
+                            config = generate_visualization_config(simple_config, context)
+                            if config:
+                                chart_configs.append(config)
+                except Exception as e:
+                    logger.error(f"Forced visualization failed: {str(e)}")
+            
+            # 4. Absolute last resort - create an empty chart with message
+            if not chart_configs:
+                empty_chart = {
+                    'title': {'text': 'Data Overview'},
+                    'tooltip': {},
+                    'series': [{
+                        'type': 'bar',
+                        'data': [1],
+                        'itemStyle': {'color': '#37a2da'},
+                        'label': {
+                            'show': true,
+                            'position': 'top',
+                            'formatter': 'No visualizable data found'
+                        }
+                    }]
+                }
+                chart_configs.append(empty_chart)
+            
+            return {
+                "answer": "Here are the visualizations based on your data:",
+                "visualizations": chart_configs
+            }
+            
         else:
+            # Handle non-visualization requests
             system_prompt = "You are a data analysis expert. Answer the specific question asked using the data provided."
             
-        response = openai_client.chat.completions.create(
-            model="gpt-4",
-            messages=[{
-                "role": "system",
-                "content": system_prompt
-            }, {
-                "role": "user",
-                "content": question,
-            }, {
-                "role": "system", 
-                "content": f"Data Context:\n{json.dumps(context)}"
-            }],
-            temperature=0.2
-        )
-        
-        return {
-            "response": {
-                "answer": response.choices[0].message.content
-            }
-        }
+            response = openai_client.chat.completions.create(
+                model="gpt-4o",
+                messages=[{
+                    "role": "system",
+                    "content": system_prompt
+                }, {
+                    "role": "user",
+                    "content": question,
+                }, {
+                    "role": "system", 
+                    "content": f"Data Context:\n{json.dumps(context)}"
+                }],
+                temperature=0.2
+            )
+            
+            return {"answer": response.choices[0].message.content}
+            
     except Exception as e:
         logger.error(f"Error in get_ai_insights: {str(e)}")
+        # Even on complete failure, return an empty chart
         return {
-            "response": {
-                "answer": f"Error: {str(e)}"
+            "answer": "Attempting to visualize your data:",
+            "visualizations": [{
+                'title': {'text': 'Data Overview'},
+                'tooltip': {},
+                'series': [{
+                    'type': 'bar',
+                    'data': [1],
+                    'itemStyle': {'color': '#37a2da'},
+                    'label': {
+                        'show': true,
+                        'position': 'top',
+                        'formatter': 'Error processing data'
+                    }
+                }]
+            }]
+        }
+
+
+def prepare_data_context(context: Dict[str, Any]) -> Dict[str, Any]:
+    """Prepare and validate data context for visualization."""
+    try:
+        # Extract column information
+        numeric_cols = [
+            col for col, stats in context.get('column_stats', {}).items()
+            if stats.get('type') == 'numeric'
+        ]
+        categorical_cols = [
+            col for col, stats in context.get('column_stats', {}).items()
+            if stats.get('type') == 'categorical'
+        ]
+        time_cols = [
+            col for col in context.get('columns', [])
+            if any(t in col.lower() for t in ['time', 'date', 'year', 'month', 'day'])
+        ]
+        
+        # Validate minimum data requirements
+        if not context.get('preview') or not context.get('columns'):
+            return {
+                "success": False,
+                "error": "No data available for visualization"
             }
+            
+        if not numeric_cols and not categorical_cols:
+            return {
+                "success": False,
+                "error": "No numeric or categorical columns found for visualization"
+            }
+            
+        # Prepare the context
+        data_context = {
+            "numeric_columns": numeric_cols,
+            "categorical_columns": categorical_cols,
+            "time_columns": time_cols,
+            "total_rows": context.get('summary', {}).get('rows', 0),
+            "column_stats": context.get('column_stats', {}),
+            "preview": context.get('preview', []),
+            "columns": context.get('columns', []),
+            "available_chart_types": [
+                "bar", "line", "scatter", "pie", "boxplot", "heatmap",
+                "treemap", "sunburst", "gauge", "funnel", "candlestick",
+                "graph", "themeRiver", "parallel"
+            ]
+        }
+        
+        return {
+            "success": True,
+            "data": data_context
+        }
+        
+    except Exception as e:
+        logger.error(f"Error preparing data context: {str(e)}")
+        return {
+            "success": False,
+            "error": f"Error preparing data context: {str(e)}"
         }
 
 
@@ -117,29 +270,40 @@ def extract_visualization_suggestions(
             "time_columns": time_cols,
             "total_rows": data.get('summary', {}).get('rows', 0),
             "column_stats": data.get('column_stats', {}),
-            "available_chart_types": ["bar", "line", "scatter", "pie", "boxplot", "heatmap"]
+            "available_chart_types": ["bar", "line", "scatter", "pie", "boxplot", "heatmap", "treemap", "sunburst", "gauge", "funnel", "candlestick", "graph", "themeRiver", "parallel"]
         }
 
         # Ask GPT-4 for visualization suggestions
-        system_prompt = """You are a data visualization expert. Analyze the data characteristics and suggest the most insightful visualizations.
-        Consider:
-        1. Data types (numeric, categorical, temporal)
-        2. Data distributions
-        3. Potential correlations
-        4. Time series patterns
-        5. Categorical distributions
-        
-        Return a JSON array of visualization configs, each with:
-        - chart_type: The type of chart to use
-        - title: A descriptive title
-        - x_axis: The column for x-axis (if applicable)
-        - y_axis: The column for y-axis (if applicable)
-        - explanation: Why this visualization is insightful
-        
-        Limit to 3-4 most insightful visualizations."""
+        system_prompt = """<system>
+You are a data visualization expert with deep expertise in translating data characteristics into meaningful visual insights. Your role is to:
+
+1. Analyze datasets by examining:
+   - Data types (numeric, categorical, temporal)
+   - Statistical distributions
+   - Correlation patterns
+   - Time-based trends
+   - Category breakdowns
+
+2. Recommend 3-4 of the most impactful visualizations, with each recommendation structured as:
+{
+    "chart_type": "[appropriate chart selection]",
+    "title": "[clear, descriptive title]",
+    "x_axis": "[x-axis variable]",
+    "y_axis": "[y-axis variable]",
+    "explanation": "[justification for this visualization choice]"
+}
+
+Focus on selecting visualizations that:
+- Best represent the underlying data relationships
+- Provide meaningful insights to stakeholders
+- Follow data visualization best practices
+- Tell a coherent story with the data
+
+Ensure all recommendations are clear, actionable, and properly justified with analytical reasoning.
+</system>"""
 
         response = openai_client.chat.completions.create(
-            model="gpt-4",
+            model="gpt-4o",
             messages=[{
                 "role": "system",
                 "content": system_prompt
@@ -1285,8 +1449,7 @@ def get_visualization_configs(data: Dict[str, Any]) -> Dict[str, Any]:
             data.get('summary', {}).get('rows', 0),
             "column_stats":
             data.get('column_stats', {}),
-            "available_chart_types":
-            ["bar", "line", "scatter", "pie", "boxplot", "heatmap"]
+            "available_chart_types": ["bar", "line", "scatter", "pie", "boxplot", "heatmap", "treemap", "sunburst", "gauge", "funnel", "candlestick", "graph", "themeRiver", "parallel"]
         }
 
         system_message = {
@@ -1340,7 +1503,9 @@ def get_visualization_configs(data: Dict[str, Any]) -> Dict[str, Any]:
                                     "string",
                                     "enum": [
                                         "bar", "line", "scatter", "pie",
-                                        "boxplot", "heatmap"
+                                        "boxplot", "heatmap", "treemap", "sunburst",
+                                        "gauge", "funnel", "candlestick", "graph",
+                                        "themeRiver", "parallel"
                                     ]
                                 },
                                 "title": {
