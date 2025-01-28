@@ -1486,17 +1486,30 @@ def get_visualization_configs(data: Dict[str, Any]) -> Dict[str, Any]:
     if not openai_client:
         logger.error("OpenAI client not initialized")
         raise APIKeyError("OpenAI client is not properly initialized")
+        
+    # Extract numeric and categorical columns with data validation
+    numeric_cols = []
+    categorical_cols = []
+    
+    for col, stats in data.get('column_stats', {}).items():
+        if stats.get('type') == 'numeric' and stats.get('valid_count', 0) > 0:
+            numeric_cols.append(col)
+        elif stats.get('type') == 'categorical' and stats.get('unique_values', 0) > 0:
+            categorical_cols.append(col)
 
     try:
-        # Prepare data context similar to our improved extract_visualization_suggestions
-        numeric_cols = [
-            col for col, stats in data.get('column_stats', {}).items()
-            if stats.get('type') == 'numeric'
-        ]
-        categorical_cols = [
-            col for col, stats in data.get('column_stats', {}).items()
-            if stats.get('type') == 'categorical'
-        ]
+        # Prepare enhanced data context with statistics
+        data_context = {
+            "numeric_columns": numeric_cols,
+            "categorical_columns": categorical_cols,
+            "total_rows": data.get('summary', {}).get('rows', 0),
+            "column_stats": {
+                col: stats for col, stats in data.get('column_stats', {}).items()
+                if stats.get('valid_count', 0) > 0
+            },
+            "preview_data": data.get('preview', [])[:5],
+            "available_chart_types": ["bar", "scatter", "line", "boxplot"]
+        }
         time_cols = [
             col for col in data.get('columns', [])
             if any(t in col.lower()

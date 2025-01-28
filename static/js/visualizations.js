@@ -123,6 +123,17 @@ async function updateVisualizations(configs) {
         showError('Invalid visualization configuration format');
         return;
     }
+
+    // Filter out invalid/empty configurations
+    configs = configs.filter(config => {
+        if (!config.series || !Array.isArray(config.series)) return false;
+        return config.series.some(series => 
+            series.data && Array.isArray(series.data) && series.data.length > 0
+        );
+    });
+
+    // Limit number of visualizations
+    configs = configs.slice(0, 3);
     
     log('Processing visualization configs:', configs);
     
