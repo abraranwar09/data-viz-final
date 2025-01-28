@@ -189,7 +189,7 @@ async function updateVisualizations(configs) {
                 // Apply configuration with comprehensive defaults
                 const enhancedConfig = {
                     animation: false,
-                    backgroundColor: 'transparent',
+                    backgroundColor: 'rgba(43, 51, 59, 1)', // Darker, consistent background
                     grid: {
                         left: '3%',
                         right: '4%',
@@ -198,8 +198,26 @@ async function updateVisualizations(configs) {
                     },
                     tooltip: {
                         trigger: 'item',
-                        axisPointer: {
-                            type: 'shadow'
+                        axisPointer: { type: 'shadow' },
+                        backgroundColor: 'rgba(0, 0, 0, 0.7)', // A darker tooltip background
+                        textStyle: { color: '#fff' }
+                    },
+                    // Add a simple legend to many chart types by default (if not already present)
+                    legend: {
+                        show: true,
+                        top: 'bottom',
+                        textStyle: { color: '#fff' }
+                    },
+                    // Center-align title with better readability
+                    title: {
+                        ...(config.title || {}),
+                        left: 'center',
+                        top: 20,
+                        textStyle: {
+                            color: '#fff',
+                            fontSize: 16,
+                            fontWeight: 'bold',
+                            ...(config.title?.textStyle || {})
                         }
                     },
                     xAxis: config.xAxis || {
