@@ -1535,25 +1535,35 @@ def get_visualization_configs(data: Dict[str, Any]) -> Dict[str, Any]:
             "system",
             "content":
             """You are a data visualization expert specializing in ECharts.
-            Analyze the provided data and create optimal visualizations that best represent the patterns and insights.
+            Create diverse and insightful visualizations using multiple chart types to best represent the data.
+
+            Available chart types:
+            - Basic: bar, line, scatter, pie
+            - Statistical: boxplot, heatmap
+            - Hierarchical: treemap, sunburst
+            - Special: gauge, funnel, candlestick
+            - Relational: graph
+            - Advanced: themeRiver, parallel
 
             Consider:
-            1. Data types (numeric, categorical, temporal)
-            2. Data distributions and patterns
-            3. Potential correlations
-            4. Time series patterns if applicable
-            5. Categorical distributions and relationships
+            1. Use different chart types based on data characteristics
+            2. Combine multiple visualization types for comprehensive insights
+            3. Match chart types to data relationships:
+               - Distributions: boxplot, histogram
+               - Correlations: scatter, heatmap
+               - Hierarchical: treemap, sunburst
+               - Time series: line, candlestick
+               - Categories: bar, pie, funnel
+               - Multi-dimensional: parallel, radar
 
             For each visualization, provide:
-            1. chart_type: The most appropriate chart type
-            2. title: A clear, descriptive title
+            1. chart_type: Select from available types
+            2. title: Clear, descriptive title
             3. x_axis: Column for x-axis (if applicable)
             4. y_axis: Column for y-axis (if applicable)
-            5. explanation: Why this visualization is insightful
+            5. explanation: Why this visualization and chart type is appropriate
 
-            Return a JSON array of visualization configurations.
-            Each config should follow the schema provided in the function definition.
-            Limit to 3-4 most insightful visualizations."""
+            Return 3-4 different chart types that best represent the data patterns."""
         }
 
         user_message = {
