@@ -188,27 +188,99 @@ async function handleAIQuestion() {
                 console.log('Visualization Type:', typeof visualizations);
                 console.log('Visualization Structure:', JSON.stringify(visualizations, null, 2));
                 
-                // Ensure visualizations is an array
-                const vizArray = Array.isArray(visualizations) ? visualizations : [visualizations];
-                
-                // Validate each visualization config
-                const validConfigs = vizArray.filter(config => {
-                    if (!config || typeof config !== 'object') {
-                        console.error('Invalid config format:', config);
-                        return false;
-                    }
-                    if (!config.series || !Array.isArray(config.series)) {
-                        console.error('Missing or invalid series:', config);
-                        return false;
-                    }
-                    return true;
-                });
+                try {
+                    // Prepare data for visualization generation
+                    const processedData = {
+                        processed_data: {
+                            preview: window.appState.currentData.preview || [],
+                            categorical: {},
+                            numeric: {}
+                        },
+                        column_stats: window.appState.currentData.column_stats || {}
+                    };
 
-                if (validConfigs.length > 0) {
-                    console.log('Valid visualization configs:', validConfigs);
-                    await updateVisualizations(validConfigs);
-                } else {
-                    console.error('No valid visualization configs found');
+                    // Process column statistics to categorize data
+                    Object.entries(window.appState.currentData.column_stats || {}).forEach(([column, stats]) => {
+                        if (stats.type === 'categorical') {
+                            // Ensure frequencies exist and are in correct format
+                            const frequencies = stats.frequencies || {};
+                            processedData.processed_data.categorical[column] = {
+                                frequencies,
+                                total: Object.values(frequencies).reduce((a, b) => a + b, 0),
+                                data: Object.entries(frequencies).map(([key, value]) => ({
+                                    name: key,
+                                    value: value
+                                }))
+                            };
+                        } else if (stats.type === 'numeric') {
+                            // Ensure numeric data has required properties
+                            processedData.processed_data.numeric[column] = {
+                                min: stats.min || 0,
+                                max: stats.max || 0,
+                                mean: stats.mean || 0,
+                                median: stats.median || 0,
+                                data: stats.frequencies ? Object.entries(stats.frequencies).map(([key, value]) => ({
+                                    name: parseFloat(key),
+                                    value: value
+                                })) : []
+                            };
+                        }
+                    });
+
+                    // Generate charts using the categorical data
+                    const configs = [];
+                    
+                    // Add categorical charts if we have categorical data
+                    if (Object.keys(processedData.processed_data.categorical).length > 0) {
+                        const categoricalCharts = generateCategoricalCharts(processedData.processed_data);
+                        if (categoricalCharts.length > 0) {
+                            // Validate each chart config before adding
+                            categoricalCharts.forEach(config => {
+                                if (config.series && Array.isArray(config.series)) {
+                                    // Ensure each series has required properties
+                                    config.series.forEach(series => {
+                                        if (!series.data) {
+                                            series.data = [];
+                                        }
+                                        if (!series.type) {
+                                            series.type = 'bar';  // Default to bar chart
+                                        }
+                                    });
+                                    configs.push(config);
+                                }
+                            });
+                        }
+                    }
+                    
+                    // If AI provided specific visualizations, validate and merge them
+                    if (Array.isArray(visualizations)) {
+                        visualizations.forEach(vizConfig => {
+                            if (vizConfig && typeof vizConfig === 'object' && vizConfig.series) {
+                                // Deep clone to avoid modifying original
+                                const validatedConfig = JSON.parse(JSON.stringify(vizConfig));
+                                
+                                // Ensure each series has required properties
+                                validatedConfig.series = validatedConfig.series.map(series => ({
+                                    type: series.type || 'bar',
+                                    data: Array.isArray(series.data) ? series.data : [],
+                                    ...series
+                                }));
+                                
+                                configs.push(validatedConfig);
+                            }
+                        });
+                    }
+                    
+                    if (configs.length > 0) {
+                        console.log('Generated visualization configs:', configs);
+                        await updateVisualizations(configs);
+                    } else {
+                        console.error('No valid visualization configs generated');
+                        addMessage('error', 'Could not generate visualizations from the current data. Please try a different visualization request.');
+                    }
+                } catch (vizError) {
+                    console.error('Visualization generation error:', vizError);
+                    addMessage('error', `Failed to generate visualizations: ${vizError.message}`);
                 }
             }
             

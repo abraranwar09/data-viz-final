@@ -119,15 +119,17 @@ function cleanupCharts() {
 
 async function updateVisualizations(configs) {
     if (!Array.isArray(configs)) {
-        console.error('Invalid configs format:', configs);
+        logError('Invalid configs format:', configs);
+        showError('Invalid visualization configuration format');
         return;
     }
     
-    console.log('Processing visualization configs:', configs);
+    log('Processing visualization configs:', configs);
     
     const container = document.getElementById('visualizationContainer');
     if (!container) {
-        console.error('Visualization container not found');
+        logError('Visualization container not found');
+        showError('Visualization container not found');
         return;
     }
 
@@ -144,24 +146,49 @@ async function updateVisualizations(configs) {
         // Process each configuration
         for (const config of configs) {
             try {
-                console.log('Creating chart with config:', config);
+                // Deep validation of config structure
+                if (!config || typeof config !== 'object') {
+                    throw new Error('Invalid chart configuration format');
+                }
+                
+                if (!config.series || !Array.isArray(config.series)) {
+                    throw new Error('Missing or invalid series configuration');
+                }
+
+                // Validate each series has required properties
+                config.series.forEach((series, idx) => {
+                    if (!series.type) {
+                        throw new Error(`Series ${idx} missing required 'type' property`);
+                    }
+                    if (!series.data && !series.source) {
+                        throw new Error(`Series ${idx} missing required 'data' or 'source' property`);
+                    }
+                    // Ensure data is in correct format
+                    if (series.data && !Array.isArray(series.data)) {
+                        series.data = [series.data];
+                    }
+                });
+
+                log('Creating chart with config:', config);
 
                 // Create container for this chart
                 const chartDiv = document.createElement('div');
                 chartDiv.className = 'chart-container';
                 chartDiv.style.width = '100%';
-                chartDiv.style.height = '400px';  // Ensure explicit height
+                chartDiv.style.height = '400px';
                 container.appendChild(chartDiv);
 
                 // Initialize chart with explicit size
-                const chart = echarts.init(chartDiv);
+                const chart = echarts.init(chartDiv, null, {
+                    renderer: 'canvas',
+                    useDirtyRect: false
+                });
                 
-                // Log chart initialization
-                console.log('Chart initialized:', chart);
+                log('Chart initialized:', chart);
 
-                // Apply configuration with defaults
+                // Apply configuration with comprehensive defaults
                 const enhancedConfig = {
-                    animation: false,  // Disable animation for initial render
+                    animation: false,
                     backgroundColor: 'transparent',
                     grid: {
                         left: '3%',
@@ -169,46 +196,89 @@ async function updateVisualizations(configs) {
                         bottom: '15%',
                         containLabel: true
                     },
+                    tooltip: {
+                        trigger: 'item',
+                        axisPointer: {
+                            type: 'shadow'
+                        }
+                    },
+                    xAxis: config.xAxis || {
+                        type: 'category',
+                        data: [],
+                        axisLabel: { color: '#fff' },
+                        axisLine: { lineStyle: { color: '#666' } }
+                    },
+                    yAxis: config.yAxis || {
+                        type: 'value',
+                        axisLabel: { color: '#fff' },
+                        axisLine: { lineStyle: { color: '#666' } }
+                    },
                     ...config,
                     series: config.series.map(series => ({
+                        animation: false,
+                        emphasis: {
+                            focus: 'series'
+                        },
+                        label: {
+                            show: true,
+                            position: 'top',
+                            color: '#fff'
+                        },
                         ...series,
-                        animation: false  // Disable animation for series
+                        // Ensure data exists
+                        data: series.data || []
                     }))
                 };
 
-                // Log the final config
-                console.log('Applying chart configuration:', enhancedConfig);
+                log('Applying chart configuration:', enhancedConfig);
                 
-                // Set the configuration
-                chart.setOption(enhancedConfig, true);  // Use true to clear previous options
+                // Set the configuration with error catching
+                try {
+                    chart.setOption(enhancedConfig, true);
+                } catch (chartError) {
+                    throw new Error(`Failed to apply chart configuration: ${chartError.message}`);
+                }
                 
                 // Force a resize after setup
                 setTimeout(() => {
-                    chart.resize();
+                    try {
+                        chart.resize();
+                    } catch (resizeError) {
+                        logError('Error resizing chart:', resizeError);
+                    }
                 }, 100);
 
-                // Add to instances
+                // Add to instances with error recovery
                 chartInstances.push({ 
                     chart,
                     container: chartDiv,
                     config: enhancedConfig
                 });
                 
-                console.log('Chart created successfully');
+                log('Chart created successfully');
             } catch (error) {
-                console.error('Error creating individual chart:', error);
+                logError('Error creating individual chart:', error);
                 const errorDiv = document.createElement('div');
                 errorDiv.className = 'alert alert-danger';
-                errorDiv.innerHTML = `Failed to create visualization: ${error.message}`;
+                errorDiv.innerHTML = `
+                    <div class="d-flex align-items-center">
+                        <i class="bi bi-exclamation-triangle-fill me-2"></i>
+                        <span>Failed to create visualization: ${error.message}</span>
+                    </div>
+                `;
                 container.appendChild(errorDiv);
             }
         }
 
-        // Update layout
-        updateChartLayout();
+        // Update layout with error handling
+        try {
+            updateChartLayout();
+        } catch (layoutError) {
+            logError('Error updating chart layout:', layoutError);
+        }
 
     } catch (error) {
-        console.error('Error in updateVisualizations:', error);
+        logError('Error in updateVisualizations:', error);
         showError('Failed to update visualizations: ' + error.message);
     } finally {
         hideLoadingState();
@@ -239,16 +309,35 @@ function hideLoadingState() {
 }
 
 function showError(message) {
-    const errorAlert = document.getElementById('errorAlert');
-    if (errorAlert) {
-        errorAlert.innerHTML = `
-            <div class="d-flex align-items-center">
-                <i class="bi bi-exclamation-triangle-fill me-2"></i>
-                <span>${message}</span>
-            </div>
-        `;
-        errorAlert.classList.remove('d-none');
+    let errorAlert = document.getElementById('errorAlert');
+    
+    // Create error alert if it doesn't exist
+    if (!errorAlert) {
+        errorAlert = document.createElement('div');
+        errorAlert.id = 'errorAlert';
+        errorAlert.className = 'alert alert-danger d-none';
+        
+        // Find a suitable container for the error alert
+        const container = document.getElementById('visualizationContainer');
+        if (container) {
+            container.parentElement.insertBefore(errorAlert, container);
+        } else {
+            document.body.appendChild(errorAlert);
+        }
     }
+
+    errorAlert.innerHTML = `
+        <div class="d-flex align-items-center">
+            <i class="bi bi-exclamation-triangle-fill me-2"></i>
+            <span>${message}</span>
+        </div>
+    `;
+    errorAlert.classList.remove('d-none');
+    
+    // Auto-hide after 5 seconds
+    setTimeout(() => {
+        errorAlert.classList.add('d-none');
+    }, 5000);
 }
 
 // Function to generate tree chart configuration
