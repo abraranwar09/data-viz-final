@@ -7,7 +7,7 @@ import json
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger('ai_helper')
 
-# Initialize OpenAI client
+# Initialize OpenAI client here
 client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
 
 
@@ -119,4 +119,86 @@ def get_visualization_configs(data, user_request=None):
 
     except Exception as e:
         logger.error(f"Error in get_visualization_configs: {str(e)}")
+        return {'error': str(e)}
+
+
+def get_chat_response(question, data):
+    """
+    Generate a chat response using GPT-4 with function calling capabilities.
+    Can both answer questions and generate visualizations as needed.
+    
+    Args:
+        question: User's question
+        data: The data context
+    """
+    try:
+        # Format data context
+        context = {
+            'data': data.get('preview', [])[:5],  # First 5 rows for context
+            'columns': list(data.get('preview', [{}])[0].keys()) if data.get('preview') else [],
+            'column_stats': data.get('column_stats', {})
+        }
+
+        # Get response from GPT-4 with function calling
+        response = client.chat.completions.create(
+            model="gpt-4o",
+            messages=[{
+                "role": "system",
+                "content": """You are a helpful data analysis assistant. You can:
+                1. Answer questions about the data
+                2. Generate visualizations when needed
+                3. Perform statistical analysis
+                4. Explain patterns and trends
+                
+                When a visualization would be helpful, call the create_visualization function.
+                Otherwise, provide a clear, concise response."""
+            }, {
+                "role": "user",
+                "content": f"Question: {question}\n\nData context: {json.dumps(context)}"
+            }],
+            functions=[{
+                "name": "create_visualization",
+                "description": "Create a visualization to answer the question or show insights",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "chart_type": {
+                            "type": "string",
+                            "description": "The type of chart to create (bar, line, scatter, pie, etc.)"
+                        },
+                        "title": {
+                            "type": "string",
+                            "description": "Clear title describing the visualization"
+                        },
+                        "config": {
+                            "type": "object",
+                            "description": "The ECharts configuration for the visualization"
+                        }
+                    },
+                    "required": ["chart_type", "title", "config"]
+                }
+            }],
+            function_call="auto"
+        )
+
+        message = response.choices[0].message
+        
+        # Handle function calling response
+        if message.function_call:
+            # If the model called create_visualization, generate a visualization
+            if message.function_call.name == "create_visualization":
+                function_args = json.loads(message.function_call.arguments)
+                return {
+                    'message': message.content or 'Here is a visualization to help answer your question.',
+                    'visualization': function_args['config']
+                }
+        
+        # For regular responses, just return the message
+        return {
+            'message': message.content,
+            'visualization': None
+        }
+
+    except Exception as e:
+        logger.error(f"Error generating chat response: {str(e)}")
         return {'error': str(e)}

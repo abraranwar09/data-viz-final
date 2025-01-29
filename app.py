@@ -4,7 +4,7 @@ from werkzeug.utils import secure_filename
 import pandas as pd
 import json
 from utils.data_processor import process_data, chunk_process_data
-from utils.ai_helper import get_ai_insights, get_visualization_configs
+from utils.ai_helper import get_ai_insights, get_visualization_configs, get_chat_response
 from utils.data_insights import DataInsights
 from utils.db_models import db, SharedAnalysis, Comment, Collaborator
 from datetime import datetime, timedelta
@@ -879,6 +879,55 @@ def analyze_data():
         return jsonify({
             'error': f"Visualization generation failed: {str(e)}. Please try rephrasing your request."
         }), 500
+
+@app.route('/ai/chat', methods=['POST'])
+def chat():
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': 'No data provided'}), 400
+
+        question = data.get('question', '')
+        context = data.get('data', {})
+        
+        # Get chat response with potential visualization
+        response = get_chat_response(question, context)
+        
+        if 'error' in response:
+            return jsonify({'error': response['error']}), 400
+
+        result = {
+            'message': response['message']
+        }
+        
+        # Include visualization if one was generated
+        if response.get('visualization'):
+            # Add common styling
+            vis_config = response['visualization']
+            vis_config.update({
+                'animation': True,
+                'responsive': True,
+                'tooltip': {
+                    'trigger': 'axis',
+                    'axisPointer': {'type': 'cross'},
+                    'backgroundColor': 'rgba(50,50,50,0.7)',
+                    'borderColor': '#333',
+                    'textStyle': {'color': '#fff'}
+                },
+                'grid': {
+                    'left': '5%',
+                    'right': '5%',
+                    'bottom': '10%',
+                    'containLabel': True
+                }
+            })
+            result['visualizations'] = [vis_config]
+        
+        return jsonify(result)
+
+    except Exception as e:
+        logger.error(f"Error in chat endpoint: {str(e)}")
+        return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True)
