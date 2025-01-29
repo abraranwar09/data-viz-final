@@ -343,32 +343,27 @@ def visualize():
         data = request.json
         if not data:
             logger.error("No data provided in request")
-            raise ValueError("No data provided")
+            return jsonify({
+                'success': False,
+                'error': "No data provided"
+            }), 400
 
         logger.debug("Getting visualization configurations")
         result = get_visualization_configs(data)
         logger.debug(f"Got visualization result: success={result['success']}")
         
         if result["success"]:
-            logger.debug(f"Returning {len(result['visualizations'])} visualizations")
+            logger.debug(f"Returning {len(result['configs'])} visualizations")
             return jsonify({
                 'success': True,
-                'visualizations': result["visualizations"]
+                'visualizations': result["configs"]
             })
         else:
-            logger.warning("GPT-4 visualization failed, falling back to default")
-            processed_data = processData(data)
-            visualizations = generate_default_visualizations(processed_data)
-            
-            if not visualizations:
-                logger.error("No visualizations could be generated")
-                raise ValueError("No visualizations could be generated")
-            
-            logger.debug(f"Returning {len(visualizations)} default visualizations")
+            logger.warning(f"Visualization generation failed: {result.get('error', 'Unknown error')}")
             return jsonify({
-                'success': True,
-                'visualizations': visualizations
-            })
+                'success': False,
+                'error': result.get('error', 'Failed to generate visualizations')
+            }), 400
 
     except Exception as e:
         logger.exception("Visualization error")

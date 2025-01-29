@@ -3,6 +3,8 @@ let pinnedCharts = [];
 const MAX_PINNED_CHARTS = 2;
 const MAX_CHARTS = 6; // Updated to 6 as requested
 const DEBUG = true;
+const LOG_PREFIX = '[Visualization]';
+const ERROR_PREFIX = '[Visualization Error]';
 
 // ECharts theme colors
 const THEME_COLORS = [
@@ -19,12 +21,12 @@ const THEME_COLORS = [
 // Add missing logging functions
 function log(...args) {
     if (DEBUG) {
-        console.log('[Visualization]', ...args);
+        console.log(LOG_PREFIX, ...args);
     }
 }
 
 function logError(...args) {
-    console.error('[Visualization Error]', ...args);
+    console.error(ERROR_PREFIX, ...args);
 }
 
 // Update chart layout based on count
@@ -118,6 +120,8 @@ function cleanupCharts() {
 }
 
 async function updateVisualizations(configs) {
+    log('Received visualization configs:', configs);
+    
     if (!Array.isArray(configs)) {
         logError('Invalid configs format:', configs);
         showError('Invalid visualization configuration format');
@@ -126,49 +130,70 @@ async function updateVisualizations(configs) {
 
     // Enhanced validation and transformation with more flexible data handling
     configs = configs.filter(config => {
+        log('Validating config:', config);
+        
         // Validate basic structure
-        if (!config || typeof config !== 'object') return false;
+        if (!config || typeof config !== 'object') {
+            logError('Invalid config structure:', config);
+            return false;
+        }
         
         // Handle different valid E-charts data formats
-        if (config.dataset && config.dataset.source) return true;
+        if (config.dataset && config.dataset.source) {
+            log('Valid dataset format found');
+            return true;
+        }
+        
         if (config.series && Array.isArray(config.series)) {
+            log('Processing series data');
             // Transform and validate each series
             config.series = config.series.map(series => {
+                log('Processing series:', series);
+                
                 // Handle different data formats
                 if (series.data === undefined && series.source) {
+                    log('Converting source to data:', series.source);
                     series.data = series.source;
                 }
                 
                 // Convert single value to array if needed
                 if (series.data !== undefined && !Array.isArray(series.data)) {
+                    log('Converting single value to array:', series.data);
                     series.data = [series.data];
                 }
                 
                 // Initialize empty data array if none exists
-                if (!series.data) series.data = [];
+                if (!series.data) {
+                    log('Initializing empty data array');
+                    series.data = [];
+                }
                 
                 // Ensure type is set
                 if (!series.type) {
+                    log('Setting default chart type: bar');
                     series.type = 'bar'; // Default to bar chart
                 }
                 
                 return series;
             });
-            
-            // Keep if any series has data or if using dataset
-            return config.series.some(series => 
-                (series.data && series.data.length > 0) || series.source
-            );
+            return true;
         }
         
-        // Allow other valid E-charts configurations
-        return true;
+        logError('Invalid config format:', config);
+        return false;
     });
 
+    log('Filtered configs:', configs);
+    
+    if (configs.length === 0) {
+        logError('No valid visualization configs found');
+        showError('No valid visualization configurations found');
+        return;
+    }
+    
     // Limit number of visualizations
     configs = configs.slice(0, 3);
-    
-    log('Processing visualization configs:', configs);
+    log('Limited configs:', configs);
     
     const container = document.getElementById('visualizationContainer');
     if (!container) {
@@ -178,11 +203,13 @@ async function updateVisualizations(configs) {
     }
 
     try {
+        log('Starting visualization update');
         showLoadingState();
 
         // Clear existing charts if in single view mode
         const isSingleView = container.classList.contains('single-view');
         if (isSingleView) {
+            log('Single view mode - cleaning up existing charts');
             cleanupCharts();
             container.innerHTML = '';
         }
@@ -190,31 +217,8 @@ async function updateVisualizations(configs) {
         // Process each configuration
         for (const config of configs) {
             try {
-                // Deep validation of config structure
-                if (!config || typeof config !== 'object') {
-                    throw new Error('Invalid chart configuration format');
-                }
-                
-                if (!config.series || !Array.isArray(config.series)) {
-                    throw new Error('Missing or invalid series configuration');
-                }
-
-                // Validate each series has required properties
-                config.series.forEach((series, idx) => {
-                    if (!series.type) {
-                        throw new Error(`Series ${idx} missing required 'type' property`);
-                    }
-                    if (!series.data && !series.source) {
-                        throw new Error(`Series ${idx} missing required 'data' or 'source' property`);
-                    }
-                    // Ensure data is in correct format
-                    if (series.data && !Array.isArray(series.data)) {
-                        series.data = [series.data];
-                    }
-                });
-
                 log('Creating chart with config:', config);
-
+                
                 // Create container for this chart
                 const chartDiv = document.createElement('div');
                 chartDiv.className = 'chart-container';
@@ -223,126 +227,42 @@ async function updateVisualizations(configs) {
                 container.appendChild(chartDiv);
 
                 // Initialize chart with explicit size
+                log('Initializing ECharts instance');
                 const chart = echarts.init(chartDiv, null, {
                     renderer: 'canvas',
                     useDirtyRect: false
                 });
                 
-                log('Chart initialized:', chart);
-
-                // Apply configuration with comprehensive defaults
-                const enhancedConfig = {
-                    animation: false,
-                    backgroundColor: 'rgba(43, 51, 59, 1)', // Darker, consistent background
-                    grid: {
-                        left: '3%',
-                        right: '4%',
-                        bottom: '15%',
-                        containLabel: true
-                    },
-                    tooltip: {
-                        trigger: 'item',
-                        axisPointer: { type: 'shadow' },
-                        backgroundColor: 'rgba(0, 0, 0, 0.7)', // A darker tooltip background
-                        textStyle: { color: '#fff' }
-                    },
-                    // Add a simple legend to many chart types by default (if not already present)
-                    legend: {
-                        show: true,
-                        top: 'bottom',
-                        textStyle: { color: '#fff' }
-                    },
-                    // Center-align title with better readability
-                    title: {
-                        ...(config.title || {}),
-                        left: 'center',
-                        top: 20,
-                        textStyle: {
-                            color: '#fff',
-                            fontSize: 16,
-                            fontWeight: 'bold',
-                            ...(config.title?.textStyle || {})
-                        }
-                    },
-                    xAxis: config.xAxis || {
-                        type: 'category',
-                        data: [],
-                        axisLabel: { color: '#fff' },
-                        axisLine: { lineStyle: { color: '#666' } }
-                    },
-                    yAxis: config.yAxis || {
-                        type: 'value',
-                        axisLabel: { color: '#fff' },
-                        axisLine: { lineStyle: { color: '#666' } }
-                    },
-                    ...config,
-                    series: config.series.map(series => ({
-                        animation: false,
-                        emphasis: {
-                            focus: 'series'
-                        },
-                        label: {
-                            show: true,
-                            position: 'top',
-                            color: '#fff'
-                        },
-                        ...series,
-                        // Ensure data exists
-                        data: series.data || []
-                    }))
-                };
-
-                log('Applying chart configuration:', enhancedConfig);
-                
-                // Set the configuration with error catching
-                try {
-                    chart.setOption(enhancedConfig, true);
-                } catch (chartError) {
-                    throw new Error(`Failed to apply chart configuration: ${chartError.message}`);
-                }
-                
-                // Force a resize after setup
-                setTimeout(() => {
-                    try {
-                        chart.resize();
-                    } catch (resizeError) {
-                        logError('Error resizing chart:', resizeError);
-                    }
-                }, 100);
-
-                // Add to instances with error recovery
-                chartInstances.push({ 
-                    chart,
-                    container: chartDiv,
-                    config: enhancedConfig
-                });
+                log('Setting chart configuration');
+                chart.setOption(config);
                 
                 log('Chart created successfully');
+                
+                // Add resize observer
+                const resizeObserver = new ResizeObserver(() => {
+                    log('Container resized - updating chart');
+                    chart.resize();
+                });
+                resizeObserver.observe(chartDiv);
+                
+                // Store chart instance
+                chartInstances.push({ chart, container: chartDiv, resizeObserver });
+                
             } catch (error) {
-                logError('Error creating individual chart:', error);
-                const errorDiv = document.createElement('div');
-                errorDiv.className = 'alert alert-danger';
-                errorDiv.innerHTML = `
-                    <div class="d-flex align-items-center">
-                        <i class="bi bi-exclamation-triangle-fill me-2"></i>
-                        <span>Failed to create visualization: ${error.message}</span>
-                    </div>
-                `;
-                container.appendChild(errorDiv);
+                logError('Error creating chart:', error);
+                showError(`Failed to create chart: ${error.message}`);
+                // Remove the failed chart's container
+                chartDiv.remove();
             }
         }
-
-        // Update layout with error handling
-        try {
-            updateChartLayout();
-        } catch (layoutError) {
-            logError('Error updating chart layout:', layoutError);
-        }
-
+        
+        log('All charts created successfully');
+        updateChartLayout();
+        hideLoadingState();
+        
     } catch (error) {
-        logError('Error in updateVisualizations:', error);
-        showError('Failed to update visualizations: ' + error.message);
-    } finally {
+        logError('Error in visualization update:', error);
+        showError(`Failed to update visualizations: ${error.message}`);
         hideLoadingState();
     }
 }

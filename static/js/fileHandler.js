@@ -103,8 +103,36 @@ function sanitizeJsonData(data) {
     return data;
 }
 
+// Initialize file handler elements
+const elements = {
+    fileInput: document.getElementById('fileInput'),
+    uploadButton: document.getElementById('uploadButton'),
+    uploadProgress: document.getElementById('uploadProgress'),
+    progressBar: document.getElementById('progressBar'),
+    progressText: document.getElementById('progressText'),
+    uploadErrorAlert: document.getElementById('errorAlert'),
+    visualizationContainer: document.getElementById('visualizationContainer')
+};
+
+// Function to show error message
 function showError(message) {
-    const errorAlert = document.getElementById('errorAlert');
+    let errorAlert = document.getElementById('errorAlert');
+    
+    // Create error alert if it doesn't exist
+    if (!errorAlert) {
+        errorAlert = document.createElement('div');
+        errorAlert.id = 'errorAlert';
+        errorAlert.className = 'alert alert-danger';
+        
+        // Find a suitable container for the error alert
+        const container = document.getElementById('visualizationContainer');
+        if (container) {
+            container.parentElement.insertBefore(errorAlert, container);
+        } else {
+            document.body.appendChild(errorAlert);
+        }
+    }
+
     errorAlert.innerHTML = `
         <div class="d-flex align-items-center">
             <i class="bi bi-exclamation-triangle-fill me-2"></i>
@@ -112,7 +140,77 @@ function showError(message) {
         </div>
     `;
     errorAlert.classList.remove('d-none');
+    
+    // Auto-hide after 5 seconds
+    setTimeout(() => {
+        errorAlert.classList.add('d-none');
+    }, 5000);
 }
+
+// Function to hide error message
+function hideError() {
+    const errorAlert = document.getElementById('errorAlert');
+    if (errorAlert) {
+        errorAlert.classList.add('d-none');
+    }
+}
+
+// Initialize file upload handler
+function initializeFileHandler() {
+    // ... rest of the initialization code ...
+    
+    // Handle file upload
+    elements.uploadButton.addEventListener('click', async () => {
+        try {
+            hideError();
+            const file = elements.fileInput.files[0];
+            if (!file) {
+                showError('Please select a file to upload');
+                return;
+            }
+
+            // Show progress bar
+            elements.uploadProgress.classList.remove('d-none');
+            elements.progressBar.style.width = '0%';
+            elements.progressText.textContent = '0%';
+
+            const formData = new FormData();
+            formData.append('file', file);
+
+            const response = await fetch('/upload', {
+                method: 'POST',
+                body: formData
+            });
+
+            if (!response.ok) {
+                throw new Error(`Upload failed: ${response.statusText}`);
+            }
+
+            const data = await response.json();
+            
+            if (data.error) {
+                throw new Error(data.error);
+            }
+
+            // Process the uploaded data
+            console.log('Handling file upload');
+            window.appState.currentData = data;
+            processUploadedData(data);
+
+            // Hide progress
+            elements.uploadProgress.classList.add('d-none');
+            elements.fileInput.value = '';
+
+        } catch (err) {
+            console.error('Upload error:', err);
+            showError(err.message || 'Failed to process file');
+            elements.uploadProgress.classList.add('d-none');
+        }
+    });
+}
+
+// Export the initialization function
+window.initializeFileHandler = initializeFileHandler;
 
 function updateDataStats(data) {
     const statsDiv = document.getElementById('dataStats');

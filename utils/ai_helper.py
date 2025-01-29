@@ -53,6 +53,7 @@ def get_ai_insights(question: str, context: Dict[str, Any]) -> Dict[str, Any]:
 
         # Validate and transform data upfront
         try:
+            logger.info("Preprocessing data for visualization")
             processed_context = preprocess_data_for_visualization(context)
             logger.debug(f"Processed context: {json.dumps(processed_context, default=str)}")
         except Exception as e:
@@ -61,6 +62,7 @@ def get_ai_insights(question: str, context: Dict[str, Any]) -> Dict[str, Any]:
         
         # Use LLM to understand the question and data relationships
         try:
+            logger.info("Analyzing question and data relationships")
             analysis_result = analyze_question_and_data(question, processed_context)
             logger.debug(f"Analysis result: {json.dumps(analysis_result, default=str)}")
         except Exception as e:
@@ -69,15 +71,18 @@ def get_ai_insights(question: str, context: Dict[str, Any]) -> Dict[str, Any]:
         
         # Generate visualization configs based on analysis
         try:
+            logger.info("Generating visualization configurations")
             chart_configs = generate_visualization_configs(analysis_result, processed_context)
             logger.debug(f"Generated chart configs: {json.dumps(chart_configs, default=str)}")
             
             if not chart_configs:
+                logger.error("No valid chart configurations generated")
                 raise ValueError("No valid chart configurations generated")
         except Exception as e:
             logger.error(f"Error generating visualizations: {str(e)}", exc_info=True)
             raise ValueError(f"Failed to generate visualizations: {str(e)}")
         
+        logger.info("Successfully generated visualizations")
         return {
             "answer": analysis_result["explanation"],
             "visualizations": chart_configs
@@ -110,10 +115,19 @@ def preprocess_data_for_visualization(context: Dict[str, Any]) -> Dict[str, Any]
     """
     logger.debug("Starting data preprocessing")
     
+    # First check if we have a valid context
+    if not isinstance(context, dict):
+        raise ValueError("Invalid data context - must be a dictionary")
+        
+    if not context.get('success', False):
+        # If context already has an error, propagate it
+        return context
+    
     if not context.get('preview') or not context.get('column_stats'):
         raise ValueError("Invalid data context - missing required fields")
 
     processed = {
+        'success': True,  # Add success flag
         'preview': context['preview'],
         'column_stats': {},
         'relationships': [],
@@ -124,185 +138,260 @@ def preprocess_data_for_visualization(context: Dict[str, Any]) -> Dict[str, Any]
         }
     }
 
-    # Process each column with enhanced type detection and validation
-    for col, stats in context['column_stats'].items():
-        logger.debug(f"Processing column: {col}")
-        
-        # Extract all non-null values
-        values = [
-            row.get(col) for row in context['preview']
-            if row.get(col) is not None and row.get(col) != ''
-        ]
-        
-        if not values:
-            logger.debug(f"No valid values found for column: {col}")
-            continue
-
-        # Enhanced type detection
-        type_counts = {
-            'numeric': sum(1 for v in values if isinstance(v, (int, float)) or 
-                         (isinstance(v, str) and v.replace('.', '').replace('-', '').isdigit())),
-            'datetime': sum(1 for v in values if isinstance(v, str) and 
-                          any(v.count(sep) >= 2 for sep in ['/', '-', ':'])),
-            'boolean': sum(1 for v in values if isinstance(v, bool) or 
-                         (isinstance(v, str) and v.lower() in ['true', 'false', 'yes', 'no', '0', '1'])),
-            'categorical': len(values)  # Default count, will be used if no other type dominates
-        }
-        
-        # Determine dominant type
-        dominant_type = max(type_counts.items(), key=lambda x: x[1])[0]
-        logger.debug(f"Detected type for {col}: {dominant_type}")
-
-        try:
-            if dominant_type == 'numeric':
-                # Convert all values to float, handling various formats
-                numeric_values = []
-                for v in values:
-                    try:
-                        if isinstance(v, (int, float)):
-                            numeric_values.append(float(v))
-                        elif isinstance(v, str):
-                            # Remove currency symbols and commas
-                            cleaned = v.replace('$', '').replace(',', '').strip()
-                            if cleaned.replace('.', '').replace('-', '').isdigit():
-                                numeric_values.append(float(cleaned))
-                    except (ValueError, TypeError):
-                        continue
-
-                if numeric_values:
-                    processed['column_stats'][col] = {
-                        'type': 'numeric',
-                        'min': min(numeric_values),
-                        'max': max(numeric_values),
-                        'mean': sum(numeric_values) / len(numeric_values),
-                        'median': sorted(numeric_values)[len(numeric_values)//2],
-                        'unique_count': len(set(numeric_values)),
-                        'null_count': len(context['preview']) - len(values),
-                        'values': numeric_values
-                    }
-                    processed['visualization_ready_data'][col] = numeric_values
-
-            elif dominant_type == 'datetime':
-                # Store original values but mark as datetime for special handling
-                processed['column_stats'][col] = {
-                    'type': 'datetime',
-                    'unique_count': len(set(values)),
-                    'null_count': len(context['preview']) - len(values),
-                    'values': values
-                }
-                processed['visualization_ready_data'][col] = values
-
-            elif dominant_type == 'boolean':
-                # Normalize boolean values
-                bool_map = {'true': True, 'false': False, 'yes': True, 'no': False, '1': True, '0': False}
-                bool_values = [
-                    bool_map[str(v).lower()] if str(v).lower() in bool_map else bool(v)
-                    for v in values
-                ]
-                processed['column_stats'][col] = {
-                    'type': 'boolean',
-                    'true_count': sum(1 for v in bool_values if v),
-                    'false_count': sum(1 for v in bool_values if not v),
-                    'null_count': len(context['preview']) - len(values),
-                    'values': bool_values
-                }
-                processed['visualization_ready_data'][col] = bool_values
-
-            else:  # categorical
-                # Handle categorical data with frequency analysis
-                value_counts = {}
-                for v in values:
-                    str_val = str(v)
-                    value_counts[str_val] = value_counts.get(str_val, 0) + 1
-
-                processed['column_stats'][col] = {
-                    'type': 'categorical',
-                    'unique_values': list(value_counts.keys()),
-                    'frequencies': value_counts,
-                    'unique_count': len(value_counts),
-                    'null_count': len(context['preview']) - len(values),
-                    'most_common': max(value_counts.items(), key=lambda x: x[1])[0],
-                    'values': values
-                }
-                processed['visualization_ready_data'][col] = value_counts
-
-        except Exception as e:
-            logger.error(f"Error processing column {col}: {str(e)}")
-            continue
-
-    # Identify relationships between columns
     try:
-        processed['relationships'] = identify_column_relationships(processed)
+        # Process each column with enhanced type detection and validation
+        for col, stats in context['column_stats'].items():
+            logger.debug(f"Processing column: {col}")
+            
+            # Extract all non-null values
+            values = [
+                row.get(col) for row in context['preview']
+                if row.get(col) is not None and row.get(col) != ''
+            ]
+            
+            if not values:
+                logger.debug(f"No valid values found for column: {col}")
+                continue
+
+            # Enhanced type detection
+            type_counts = {
+                'numeric': sum(1 for v in values if isinstance(v, (int, float)) or 
+                             (isinstance(v, str) and v.replace('.', '').replace('-', '').isdigit())),
+                'datetime': sum(1 for v in values if isinstance(v, str) and 
+                              any(v.count(sep) >= 2 for sep in ['/', '-', ':'])),
+                'boolean': sum(1 for v in values if isinstance(v, bool) or 
+                             (isinstance(v, str) and v.lower() in ['true', 'false', 'yes', 'no', '0', '1'])),
+                'categorical': len(values)  # Default count, will be used if no other type dominates
+            }
+
+            # Determine dominant type
+            dominant_type = max(type_counts.items(), key=lambda x: x[1])[0]
+            logger.debug(f"Detected type for {col}: {dominant_type}")
+
+            try:
+                if dominant_type == 'numeric':
+                    # Convert all values to float, handling various formats
+                    numeric_values = []
+                    for v in values:
+                        try:
+                            if isinstance(v, (int, float)):
+                                numeric_values.append(float(v))
+                            elif isinstance(v, str):
+                                # Remove currency symbols and commas
+                                cleaned = v.replace('$', '').replace(',', '').strip()
+                                if cleaned.replace('.', '').replace('-', '').isdigit():
+                                    numeric_values.append(float(cleaned))
+                        except (ValueError, TypeError):
+                            continue
+
+                    if numeric_values:
+                        processed['column_stats'][col] = {
+                            'type': 'numeric',
+                            'min': min(numeric_values),
+                            'max': max(numeric_values),
+                            'mean': sum(numeric_values) / len(numeric_values),
+                            'median': sorted(numeric_values)[len(numeric_values)//2],
+                            'unique_count': len(set(numeric_values)),
+                            'null_count': len(context['preview']) - len(values),
+                            'values': numeric_values
+                        }
+                        processed['visualization_ready_data'][col] = numeric_values
+
+                elif dominant_type == 'datetime':
+                    # Store original values but mark as datetime for special handling
+                    processed['column_stats'][col] = {
+                        'type': 'datetime',
+                        'unique_count': len(set(values)),
+                        'null_count': len(context['preview']) - len(values),
+                        'values': values
+                    }
+                    processed['visualization_ready_data'][col] = values
+
+                elif dominant_type == 'boolean':
+                    # Normalize boolean values
+                    bool_map = {'true': True, 'false': False, 'yes': True, 'no': False, '1': True, '0': False}
+                    bool_values = [
+                        bool_map[str(v).lower()] if str(v).lower() in bool_map else bool(v)
+                        for v in values
+                    ]
+                    processed['column_stats'][col] = {
+                        'type': 'boolean',
+                        'true_count': sum(1 for v in bool_values if v),
+                        'false_count': sum(1 for v in bool_values if not v),
+                        'null_count': len(context['preview']) - len(values),
+                        'values': bool_values
+                    }
+                    processed['visualization_ready_data'][col] = bool_values
+
+                else:  # categorical
+                    # Handle categorical data with frequency analysis
+                    value_counts = {}
+                    for v in values:
+                        str_val = str(v)
+                        value_counts[str_val] = value_counts.get(str_val, 0) + 1
+
+                    processed['column_stats'][col] = {
+                        'type': 'categorical',
+                        'unique_values': list(value_counts.keys()),
+                        'frequencies': value_counts,
+                        'unique_count': len(value_counts),
+                        'null_count': len(context['preview']) - len(values),
+                        'most_common': max(value_counts.items(), key=lambda x: x[1])[0],
+                        'values': values
+                    }
+                    processed['visualization_ready_data'][col] = value_counts
+
+            except Exception as e:
+                logger.error(f"Error processing column {col}: {str(e)}")
+                continue
+
+        # Identify relationships between columns
+        try:
+            processed['relationships'] = identify_column_relationships(processed)
+        except Exception as e:
+            logger.error(f"Error identifying relationships: {str(e)}")
+            processed['relationships'] = []
+
+        # Add metadata about processed data
+        processed['metadata'].update({
+            'numeric_columns': [col for col, stats in processed['column_stats'].items() if stats['type'] == 'numeric'],
+            'categorical_columns': [col for col, stats in processed['column_stats'].items() if stats['type'] == 'categorical'],
+            'datetime_columns': [col for col, stats in processed['column_stats'].items() if stats['type'] == 'datetime'],
+            'boolean_columns': [col for col, stats in processed['column_stats'].items() if stats['type'] == 'boolean']
+        })
+
+        logger.debug("Data preprocessing completed successfully")
+        return processed
+
     except Exception as e:
-        logger.error(f"Error identifying relationships: {str(e)}")
-        processed['relationships'] = []
-
-    # Add metadata about processed data
-    processed['metadata'].update({
-        'numeric_columns': [col for col, stats in processed['column_stats'].items() if stats['type'] == 'numeric'],
-        'categorical_columns': [col for col, stats in processed['column_stats'].items() if stats['type'] == 'categorical'],
-        'datetime_columns': [col for col, stats in processed['column_stats'].items() if stats['type'] == 'datetime'],
-        'boolean_columns': [col for col, stats in processed['column_stats'].items() if stats['type'] == 'boolean']
-    })
-
-    logger.debug("Data preprocessing completed successfully")
-    return processed
+        logger.error(f"Failed to preprocess data: {str(e)}")
+        return {
+            'success': False,
+            'error': f"Failed to preprocess data: {str(e)}"
+        }
 
 
 def analyze_question_and_data(question: str, context: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Uses LLM to understand the question and suggest appropriate visualizations.
-    """
-    # Prepare prompt for the LLM
-    prompt = f"""
-    Analyze this question: "{question}"
-    Available columns and their types:
-    {json.dumps(context['column_stats'], indent=2)}
+    """Analyze the question and data to determine appropriate visualizations."""
+    logger.info(f"Analyzing question: {question}")
     
-    Suggest visualizations that would best answer this question.
-    Consider relationships between columns: {json.dumps(context['relationships'], indent=2)}
-    """
-    
-    # Get LLM response
-    response = get_llm_analysis(prompt)
-    
-    return {
-        "explanation": response["explanation"],
-        "suggested_visualizations": response["visualizations"],
-        "data_requirements": response["data_requirements"]
-    }
+    try:
+        # Extract key information from the question
+        logger.debug("Extracting key information from question")
+        question_info = {
+            'visualization_type': determine_visualization_type(question),
+            'target_columns': extract_target_columns(question, context),
+            'aggregation': extract_aggregation_info(question)
+        }
+        logger.debug(f"Question analysis: {json.dumps(question_info, default=str)}")
+        
+        # Analyze data characteristics
+        logger.debug("Analyzing data characteristics")
+        data_info = {
+            'column_types': {
+                col: stats['type']
+                for col, stats in context['column_stats'].items()
+            },
+            'relationships': context.get('relationships', []),
+            'data_quality': validate_data_quality(context)
+        }
+        logger.debug(f"Data analysis: {json.dumps(data_info, default=str)}")
+        
+        # Generate explanation
+        explanation = generate_analysis_explanation(question_info, data_info)
+        logger.info("Analysis completed successfully")
+        
+        return {
+            'question_analysis': question_info,
+            'data_analysis': data_info,
+            'explanation': explanation
+        }
+    except Exception as e:
+        logger.error(f"Error in analyze_question_and_data: {str(e)}", exc_info=True)
+        raise
 
 
 def generate_visualization_configs(analysis: Dict[str, Any], context: Dict[str, Any]) -> List[Dict[str, Any]]:
-    """
-    Generates concrete visualization configurations based on LLM analysis.
-    """
-    configs = []
+    """Generate visualization configurations based on analysis."""
+    logger.info("Generating visualization configurations")
     
-    for viz in analysis["suggested_visualizations"]:
-        required_columns = viz["required_columns"]
-        viz_type = viz["type"]
+    try:
+        configs = []
+        question_info = analysis['question_analysis']
+        data_info = analysis['data_analysis']
         
-        # Verify we have all required data
-        if not all(col in context['visualization_ready_data'] for col in required_columns):
-            continue
-            
-        # Generate appropriate configuration based on visualization type
-        if viz_type == "bar":
-            config = generate_bar_chart_config(viz, context)
-        elif viz_type == "line":
-            config = generate_line_chart_config(viz, context)
-        elif viz_type == "scatter":
-            config = generate_scatter_plot_config(viz, context)
-        elif viz_type == "pie":
-            config = generate_pie_chart_config(viz, context)
-        else:
-            config = generate_default_chart_config(viz, context)
-            
-        if config:
-            configs.append(config)
+        # Generate main visualization based on question
+        logger.debug("Generating main visualization")
+        main_config = generate_main_visualization(question_info, context)
+        if main_config:
+            logger.debug(f"Main visualization config: {json.dumps(main_config, default=str)}")
+            configs.append(main_config)
+        
+        # Generate supporting visualizations
+        logger.debug("Generating supporting visualizations")
+        supporting_configs = generate_supporting_visualizations(question_info, data_info, context)
+        if supporting_configs:
+            logger.debug(f"Supporting visualization configs: {json.dumps(supporting_configs, default=str)}")
+            configs.extend(supporting_configs)
+        
+        # Validate all configurations
+        logger.debug("Validating visualization configurations")
+        valid_configs = []
+        for config in configs:
+            try:
+                if validate_visualization_config(config, context):
+                    valid_configs.append(config)
+                else:
+                    logger.warning(f"Invalid visualization config: {json.dumps(config, default=str)}")
+            except Exception as e:
+                logger.error(f"Error validating config: {str(e)}")
+                continue
+        
+        logger.info(f"Generated {len(valid_configs)} valid visualization configurations")
+        return valid_configs
+    except Exception as e:
+        logger.error(f"Error in generate_visualization_configs: {str(e)}", exc_info=True)
+        raise
+
+
+def validate_visualization_config(config: Dict[str, Any], context: Dict[str, Any]) -> bool:
+    """Validate a visualization configuration."""
+    logger.debug(f"Validating config: {json.dumps(config, default=str)}")
     
-    return configs
+    try:
+        # Check basic structure
+        if not isinstance(config, dict):
+            logger.error("Config is not a dictionary")
+            return False
+            
+        # Validate required fields
+        required_fields = ['title', 'series']
+        for field in required_fields:
+            if field not in config:
+                logger.error(f"Missing required field: {field}")
+                return False
+        
+        # Validate series data
+        if not isinstance(config['series'], list):
+            logger.error("Series is not a list")
+            return False
+            
+        for series in config['series']:
+            if not isinstance(series, dict):
+                logger.error("Series item is not a dictionary")
+                return False
+            if 'type' not in series:
+                logger.error("Series missing type")
+                return False
+            if 'data' not in series and 'source' not in series:
+                logger.error("Series missing data/source")
+                return False
+        
+        logger.debug("Config validation successful")
+        return True
+    except Exception as e:
+        logger.error(f"Error in validate_visualization_config: {str(e)}")
+        return False
 
 
 def identify_column_relationships(context: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -390,6 +479,7 @@ def prepare_data_context(context: Dict[str, Any]) -> Dict[str, Any]:
 
         # Prepare enhanced context with metadata
         data_context = {
+            "success": True,  # Add success flag
             "numeric_columns": numeric_cols,
             "categorical_columns": categorical_cols,
             "time_columns": time_cols,
@@ -413,14 +503,10 @@ def prepare_data_context(context: Dict[str, Any]) -> Dict[str, Any]:
             ]
         }
 
-        logger.debug("Data context preparation completed successfully")
-        return {
-            "success": True,
-            "data": data_context
-        }
+        return data_context
 
     except Exception as e:
-        logger.exception("Critical error preparing data context")
+        logger.error(f"Error preparing data context: {str(e)}")
         return {
             "success": False,
             "error": f"Failed to prepare data context: {str(e)}"
@@ -1218,33 +1304,36 @@ def generate_visualization_config(
                 }
             except Exception as e:
                 logger.error(f"Error generating ThemeRiver chart: {str(e)}")
-            return None
+                return None
 
         # Extract valid data points based on chart type
         valid_data = []
         if chart_type in ['bar', 'line']:
             valid_data = [
-                (str(row[x_axis]), float(row[y_axis])) for row in preview_data
-                if x_axis in row and y_axis in row and row[x_axis] is not None
-                and row[y_axis] is not None and not (
-                    isinstance(row[y_axis], float) and math.isnan(row[y_axis]))
+                (str(row[x_axis]), float(row[y_axis])) 
+                for row in preview_data
+                if x_axis in row and y_axis in row 
+                and row[x_axis] is not None
+                and row[y_axis] is not None 
+                and not (isinstance(row[y_axis], float) and math.isnan(row[y_axis]))
             ]
         elif chart_type == 'scatter':
             valid_data = [
                 [float(row[x_axis]), float(row[y_axis])]
                 for row in preview_data
-                if x_axis in row and y_axis in row and row[x_axis] is not None
-                and row[y_axis] is not None and not (
-                    isinstance(row[x_axis], float) and math.isnan(row[x_axis]))
-                and not (
-                    isinstance(row[y_axis], float) and math.isnan(row[y_axis]))
+                if x_axis in row and y_axis in row 
+                and row[x_axis] is not None
+                and row[y_axis] is not None 
+                and not (isinstance(row[x_axis], float) and math.isnan(row[x_axis]))
+                and not (isinstance(row[y_axis], float) and math.isnan(row[y_axis]))
             ]
         elif chart_type == 'boxplot':
             # For boxplot, we need to calculate the statistical values
             valid_values = [
-                float(row[y_axis]) for row in preview_data
-                if y_axis in row and row[y_axis] is not None and not (
-                    isinstance(row[y_axis], float) and math.isnan(row[y_axis]))
+                float(row[y_axis]) 
+                for row in preview_data
+                if y_axis in row and row[y_axis] is not None 
+                and not (isinstance(row[y_axis], float) and math.isnan(row[y_axis]))
             ]
             if valid_values:
                 sorted_values = sorted(valid_values)
@@ -1269,9 +1358,11 @@ def generate_visualization_config(
         elif chart_type == 'heatmap':
             # For heatmap, create a correlation matrix or frequency matrix
             x_values = list(
-                set(str(row[x_axis]) for row in preview_data if x_axis in row))
+                set(str(row[x_axis]) for row in preview_data if x_axis in row)
+            )
             y_values = list(
-                set(str(row[y_axis]) for row in preview_data if y_axis in row))
+                set(str(row[y_axis]) for row in preview_data if y_axis in row)
+            )
 
             # Create frequency matrix
             matrix = []
@@ -1280,8 +1371,8 @@ def generate_visualization_config(
                     count = sum(1 for row in preview_data
                                 if str(row.get(x_axis)) == x_val
                                 and str(row.get(y_axis)) == y_val)
-                    matrix.append([j, i, count])
-            valid_data = matrix
+        }
+        valid_data = matrix
 
         # If no valid data points, return None
         if not valid_data:
@@ -1321,10 +1412,8 @@ def generate_visualization_config(
         # Configure axes and series based on chart type
         if chart_type in ['bar', 'line', 'scatter', 'boxplot']:
             config.update({
-            'xAxis': {
-                    'type':
-                    'category'
-                    if chart_type in ['bar', 'line', 'boxplot'] else 'value',
+                'xAxis': {
+                    'type': 'category' if chart_type in ['bar', 'line', 'boxplot'] else 'value',
                     'axisLabel': {
                         'color': '#fff'
                     },
@@ -1333,9 +1422,9 @@ def generate_visualization_config(
                             'color': '#fff'
                         }
                     }
-            },
-            'yAxis': {
-                'type': 'value',
+                },
+                'yAxis': {
+                    'type': 'value',
                     'axisLabel': {
                         'color': '#fff'
                     },
@@ -1558,9 +1647,9 @@ def validate_data_quality(data: Dict[str, Any]) -> str:
         for col in columns:
             null_count = sum(1 for row in preview_data
                              if row.get(col) is None or row.get(col) == '')
-            if null_count > 0:
-                issues.append(
-                    f"Column '{col}' has {null_count} missing values")
+        if null_count > 0:
+            issues.append(
+                f"Column '{col}' has {null_count} missing values")
 
         # Check for NaN values in numeric columns
         for col, stat in stats.items():
@@ -1568,18 +1657,18 @@ def validate_data_quality(data: Dict[str, Any]) -> str:
                 nan_count = sum(1 for row in preview_data
                                 if isinstance(row.get(col), float)
                                 and math.isnan(row.get(col)))
-            if nan_count > 0:
-                issues.append(f"Column '{col}' has {nan_count} NaN values")
+        if nan_count > 0:
+            issues.append(f"Column '{col}' has {nan_count} NaN values")
 
         # Check for inconsistent data types
         for col in columns:
             types_found = set(
                 type(row.get(col)) for row in preview_data
                 if row.get(col) is not None)
-            if len(types_found) > 1:
-                issues.append(
-                    f"Column '{col}' has mixed data types: {', '.join(str(t) for t in types_found)}"
-                )
+        if len(types_found) > 1:
+            issues.append(
+                f"Column '{col}' has mixed data types: {', '.join(str(t) for t in types_found)}"
+            )
 
         if issues:
             return "Data Quality Issues Found:\n- " + "\n- ".join(
@@ -1631,188 +1720,97 @@ def determine_best_chart_type(data: Dict[str, Any], columns: List[str]) -> str:
 
 
 def get_visualization_configs(data: Dict[str, Any]) -> Dict[str, Any]:
-    """Get visualization configurations using GPT-4 with structured output."""
-    logger.debug("Starting visualization configuration generation")
-
-    if not openai_client:
-        logger.error("OpenAI client not initialized")
-        raise APIKeyError("OpenAI client is not properly initialized")
-        
-    # Extract numeric and categorical columns with data validation
-    numeric_cols = []
-    categorical_cols = []
+    """Get visualization configurations based on data analysis."""
+    logger.debug("Getting visualization configurations")
     
-    for col, stats in data.get('column_stats', {}).items():
-        if stats.get('type') == 'numeric' and stats.get('valid_count', 0) > 0:
-            numeric_cols.append(col)
-        elif stats.get('type') == 'categorical' and stats.get('unique_values', 0) > 0:
-            categorical_cols.append(col)
-
     try:
-        # Prepare enhanced data context with statistics
-        data_context = {
-            "numeric_columns": numeric_cols,
-            "categorical_columns": categorical_cols,
-            "total_rows": data.get('summary', {}).get('rows', 0),
-            "column_stats": {
-                col: stats for col, stats in data.get('column_stats', {}).items()
-                if stats.get('valid_count', 0) > 0
-            },
-            "preview_data": data.get('preview', [])[:5],
-            "available_chart_types": ["bar", "scatter", "line", "boxplot"]
-        }
-        time_cols = [
-            col for col in data.get('columns', [])
-            if any(t in col.lower()
-                   for t in ['time', 'date', 'year', 'month', 'day'])
-        ]
-
-        data_context = {
-            "numeric_columns":
-            numeric_cols,
-            "categorical_columns":
-            categorical_cols,
-            "time_columns":
-            time_cols,
-            "total_rows":
-            data.get('summary', {}).get('rows', 0),
-            "column_stats":
-            data.get('column_stats', {}),
-            "available_chart_types": ["bar", "line", "scatter", "pie", "boxplot", "heatmap", "treemap", "sunburst", "gauge", "funnel", "candlestick", "graph", "themeRiver", "parallel"]
-        }
-
-        system_message = {
-            "role":
-            "system",
-            "content":
-            """You are a data visualization expert specializing in ECharts.
-            Create diverse and insightful visualizations using multiple chart types to best represent the data.
-
-            Available chart types:
-            - Basic: bar, line, scatter, pie
-            - Statistical: boxplot, heatmap
-            - Hierarchical: treemap, sunburst
-            - Special: gauge, funnel, candlestick
-            - Relational: graph
-            - Advanced: themeRiver, parallel
-
-            Consider:
-            1. Use different chart types based on data characteristics
-            2. Combine multiple visualization types for comprehensive insights
-            3. Match chart types to data relationships:
-               - Distributions: boxplot, histogram
-               - Correlations: scatter, heatmap
-               - Hierarchical: treemap, sunburst
-               - Time series: line, candlestick
-               - Categories: bar, pie, funnel
-               - Multi-dimensional: parallel, radar
-
-            For each visualization, provide:
-            1. chart_type: Select from available types
-            2. title: Clear, descriptive title
-            3. x_axis: Column for x-axis (if applicable)
-            4. y_axis: Column for y-axis (if applicable)
-            5. explanation: Why this visualization and chart type is appropriate
-
-            Return 3-4 different chart types that best represent the data patterns."""
-        }
-
-        user_message = {
-            "role":
-            "user",
-            "content":
-            f"Create visualizations for this data:\n{json.dumps(data_context, indent=2)}"
-        }
-
-        # Define function for structured output
-        functions = [{
-            "name": "create_visualizations",
-            "description":
-            "Create robust Echarts visualization configurations of ANY type  based on data analysis",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "visualizations": {
-                        "type": "array",
-                        "items": {
-                            "type": "object",
-                            "properties": {
-                                "chart_type": {
-                                    "type":
-                                    "string",
-                                    "enum": [
-                                        "bar", "line", "scatter", "pie",
-                                        "boxplot", "heatmap", "treemap", "sunburst",
-                                        "gauge", "funnel", "candlestick", "graph",
-                                        "themeRiver", "parallel"
-                                    ]
-                                },
-                                "title": {
-                                    "type": "string"
-                                },
-                                "x_axis": {
-                                    "type": "string"
-                                },
-                                "y_axis": {
-                                    "type": "string"
-                                },
-                                "explanation": {
-                                    "type": "string"
-                                }
-                            },
-                            "required": ["chart_type", "title", "explanation"]
-                        }
-                    }
-                },
-                "required": ["visualizations"]
-            }
-        }]
-
-        logger.debug("Sending request to OpenAI")
-        response = openai_client.chat.completions.create(
-            model="gpt-4o",
-            messages=[system_message, user_message],
-            functions=functions,
-            function_call={"name": "create_visualizations"},
-            temperature=0.2)
-        logger.debug("Received response from OpenAI")
-
-        # Extract and validate the function call result
-        if not response.choices[0].message.function_call:
-            raise ValueError("No function call in response")
-
-        result = json.loads(
-            response.choices[0].message.function_call.arguments)
-
-        # Validate each visualization config
-        valid_visualizations = []
-        for viz in result.get('visualizations', []):
-            if validate_visualization_suggestion(viz, data):
-                valid_visualizations.append(viz)
-            else:
-                logger.warning(f"Skipping invalid visualization config: {viz}")
-
-        if not valid_visualizations:
-            logger.warning("No valid visualizations generated")
+        # First check if we have valid data
+        if not isinstance(data, dict):
+            return {"success": False, "error": "Invalid data format"}
+            
+        if not data.get('success', False):
+            # If data already has an error, propagate it
+            return data
+            
+        # Prepare data context
+        data_context = prepare_data_context(data)
+        if not data_context.get('success', False):
+            # If data context preparation failed, propagate the error
+            return data_context
+            
+        # Extract relevant information for visualization
+        numeric_cols = data_context.get('numeric_columns', [])
+        categorical_cols = data_context.get('categorical_columns', [])
+        
+        if not numeric_cols and not categorical_cols:
             return {
                 "success": False,
-                "error": "No valid visualizations could be generated"
+                "error": "No numeric or categorical columns available for visualization"
             }
-
-        logger.debug(
-            f"Successfully generated {len(valid_visualizations)} visualizations"
-        )
-        return {"success": True, "visualizations": valid_visualizations}
-
-    except json.JSONDecodeError as e:
-        logger.error(f"JSON decode error: {str(e)}")
+            
+        # Create visualization configurations
+        configs = []
+        
+        # Add numeric visualizations
+        if numeric_cols:
+            # Single numeric column - histogram
+            if len(numeric_cols) == 1:
+                configs.append({
+                    "chart_type": "bar",
+                    "title": f"Distribution of {numeric_cols[0]}",
+                    "x_axis": numeric_cols[0],
+                    "explanation": f"Shows the distribution of values in {numeric_cols[0]}"
+                })
+            
+            # Multiple numeric columns - scatter plot and correlation heatmap
+            if len(numeric_cols) >= 2:
+                configs.extend([
+                    {
+                        "chart_type": "scatter",
+                        "title": f"{numeric_cols[0]} vs {numeric_cols[1]}",
+                        "x_axis": numeric_cols[0],
+                        "y_axis": numeric_cols[1],
+                        "explanation": f"Shows the relationship between {numeric_cols[0]} and {numeric_cols[1]}"
+                    },
+                    {
+                        "chart_type": "heatmap",
+                        "title": "Correlation Matrix",
+                        "explanation": "Shows correlations between numeric variables"
+                    }
+                ])
+        
+        # Add categorical visualizations
+        if categorical_cols:
+            configs.extend([
+                {
+                    "chart_type": "pie",
+                    "title": f"Distribution of {categorical_cols[0]}",
+                    "x_axis": categorical_cols[0],
+                    "explanation": f"Shows the distribution of categories in {categorical_cols[0]}"
+                }
+            ])
+            
+            # If we have multiple categorical columns, add a treemap
+            if len(categorical_cols) >= 2:
+                configs.append({
+                    "chart_type": "treemap",
+                    "title": f"Hierarchical View of {categorical_cols[0]} and {categorical_cols[1]}",
+                    "x_axis": categorical_cols[0],
+                    "y_axis": categorical_cols[1],
+                    "explanation": f"Shows hierarchical relationship between {categorical_cols[0]} and {categorical_cols[1]}"
+                })
+        
+        return {
+            "success": True,
+            "configs": configs
+        }
+        
+    except Exception as e:
+        logger.error(f"Error generating visualization configs: {str(e)}")
         return {
             "success": False,
-            "error": f"Invalid visualization format: {str(e)}"
+            "error": f"Failed to generate visualization configurations: {str(e)}"
         }
-    except Exception as e:
-        logger.exception("Error generating visualizations")
-        return {"success": False, "error": str(e)}
 
 
 def generate_radar_config(data: Dict[str, Any], x_axis: str, y_axis: str, title: str) -> Dict[str, Any]:

@@ -1,7 +1,12 @@
 from typing import Dict, Any, List, Optional
 import json
+import logging
 from utils.ai_helper import get_ai_insights
 from utils.data_processor import process_data
+
+# Set up logging
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger('smart_vis')
 
 class SmartVis:
     """
@@ -10,6 +15,7 @@ class SmartVis:
     """
     
     def __init__(self):
+        logger.info("Initializing SmartVis")
         # Define the base schema for ECharts configurations
         self.echarts_schema = {
             "type": "object",
@@ -61,10 +67,12 @@ class SmartVis:
 
     def _apply_common_style(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """Apply common styling to a visualization config."""
+        logger.debug(f"Applying common style to config: {json.dumps(config, default=str)}")
         styled_config = {**self.common_style, **config}
         
         # Ensure title styling is preserved
         if "title" in config:
+            logger.debug("Preserving custom title styling")
             styled_config["title"] = {
                 **self.common_style["title"],
                 **config["title"]
@@ -72,6 +80,7 @@ class SmartVis:
         
         # Add axis styling for charts that have axes
         if "xAxis" in config:
+            logger.debug("Adding xAxis styling")
             styled_config["xAxis"] = {
                 "axisLine": {"lineStyle": {"color": "#666"}},
                 "axisLabel": {"color": "#fff"},
@@ -80,6 +89,7 @@ class SmartVis:
             }
         
         if "yAxis" in config:
+            logger.debug("Adding yAxis styling")
             styled_config["yAxis"] = {
                 "axisLine": {"lineStyle": {"color": "#666"}},
                 "axisLabel": {"color": "#fff"},
@@ -87,6 +97,7 @@ class SmartVis:
                 **config["yAxis"]
             }
             
+        logger.debug(f"Final styled config: {json.dumps(styled_config, default=str)}")
         return styled_config
 
     def generate_data_preview(self, data: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -226,38 +237,80 @@ class SmartVis:
             return None
 
     def generate_visualization(self, data: Dict[str, Any], query: str = None) -> Dict[str, Any]:
-        """
-        Generate a visualization configuration based on the input data and optional query.
+        """Generate visualization configuration based on data and query."""
+        logger.info(f"Generating visualization for query: {query}")
+        logger.debug(f"Input data summary: {json.dumps(self._get_data_summary(data), default=str)}")
         
-        Args:
-            data: The data to visualize
-            query: Optional specific visualization request/question
+        try:
+            # First generate the statistical preview
+            logger.info("Generating statistical preview")
+            preview_visualizations = self.generate_data_preview(data)
+            logger.debug(f"Generated {len(preview_visualizations)} preview visualizations")
             
-        Returns:
-            Dict containing visualization config and metadata
-        """
-        # First generate the statistical preview
-        preview_visualizations = self.generate_data_preview(data)
-        
-        # If there's a specific query, generate additional visualizations
-        if query:
-            context = {
-                "type": "visualization_request",
-                "data": data,
-                "schema": self.echarts_schema
+            # If there's a specific query, generate additional visualizations
+            if query:
+                logger.info(f"Processing specific visualization query: {query}")
+                context = {
+                    "type": "visualization_request",
+                    "data": data,
+                    "schema": self.echarts_schema
+                }
+                
+                logger.debug("Calling AI insights")
+                response = get_ai_insights(query, context)
+                logger.debug(f"AI insights response: {json.dumps(response, default=str)}")
+                
+                if "error" in response:
+                    logger.error(f"Error in AI insights: {response['error']}")
+                    return {
+                        "error": response["error"],
+                        "visualizations": preview_visualizations
+                    }
+                
+                # Combine preview and query-specific visualizations
+                all_visualizations = preview_visualizations + response.get("visualizations", [])
+                logger.info(f"Generated total of {len(all_visualizations)} visualizations")
+                
+                return {
+                    "visualizations": all_visualizations,
+                    "explanation": response.get("explanation", "")
+                }
+            
+            logger.info("No specific query provided, returning preview visualizations")
+            return {
+                "visualizations": preview_visualizations
             }
             
-            response = get_ai_insights(query, context)
-            custom_config = self._extract_config_from_response(response["answer"])
-            
-            if custom_config:
-                preview_visualizations.append(self._apply_common_style(custom_config))
-        
+        except Exception as e:
+            logger.error(f"Error generating visualization: {str(e)}", exc_info=True)
+            return {
+                "error": str(e),
+                "visualizations": [{
+                    "title": {"text": "Error Generating Visualization"},
+                    "series": [{
+                        "type": "bar",
+                        "data": [0],
+                        "itemStyle": {"color": "#ff0000"},
+                        "label": {
+                            "show": True,
+                            "position": "top",
+                            "formatter": f"Error: {str(e)}"
+                        }
+                    }]
+                }]
+            }
+
+    def _get_data_summary(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        """Get a summary of the data for logging purposes."""
         return {
-            "visualizations": preview_visualizations,
-            "data_summary": data["summary"]
+            "num_rows": len(data.get("preview", [])),
+            "num_columns": len(data.get("column_stats", {})),
+            "column_types": {
+                col: stats.get("type")
+                for col, stats in data.get("column_stats", {}).items()
+            }
         }
-    
+
     def _extract_config_from_response(self, response: str) -> Optional[Dict[str, Any]]:
         """
         Extract the ECharts configuration from the markdown response.

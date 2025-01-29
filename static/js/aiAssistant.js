@@ -166,15 +166,15 @@ async function handleAIQuestion() {
             }
         };
 
-        // Process column statistics
+        // Process column statistics and prepare context
         Object.entries(context.column_stats).forEach(([column, stats]) => {
             if (!stats) return;
             
-            // Store the raw column data for easy access
+            // Get column data
             const columnData = context.processed_data.preview.map(row => row[column]);
             
             if (stats.type === 'categorical') {
-                // Enhanced categorical data processing
+                // Process categorical data
                 const frequencies = {};
                 const validValues = columnData.filter(val => val != null && val !== '');
                 validValues.forEach(val => {
@@ -191,32 +191,37 @@ async function handleAIQuestion() {
                     }))
                 };
             } else if (stats.type === 'numeric') {
-                // Enhanced numeric data processing
+                // Process numeric data
                 const validNumbers = columnData
                     .map(val => Number(val))
                     .filter(val => !isNaN(val));
                 
-                const sorted = [...validNumbers].sort((a, b) => a - b);
-                const q1Idx = Math.floor(sorted.length * 0.25);
-                const q3Idx = Math.floor(sorted.length * 0.75);
-                
-                context.processed_data.numeric[column] = {
-                    min: Math.min(...validNumbers),
-                    max: Math.max(...validNumbers),
-                    mean: validNumbers.reduce((a, b) => a + b, 0) / validNumbers.length,
-                    median: sorted[Math.floor(sorted.length / 2)] || 0,
-                    q1: sorted[q1Idx] || 0,
-                    q3: sorted[q3Idx] || 0,
-                    raw_values: validNumbers,
-                    data: stats.frequencies ? 
-                        Object.entries(stats.frequencies)
-                            .filter(([key]) => !isNaN(key))
-                            .map(([key, value]) => ({
-                                name: Number(key),
-                                value: Number(value)
+                if (validNumbers.length > 0) {
+                    const sorted = [...validNumbers].sort((a, b) => a - b);
+                    const q1Idx = Math.floor(sorted.length * 0.25);
+                    const q3Idx = Math.floor(sorted.length * 0.75);
+                    
+                    context.processed_data.numeric[column] = {
+                        min: Math.min(...validNumbers),
+                        max: Math.max(...validNumbers),
+                        mean: validNumbers.reduce((a, b) => a + b, 0) / validNumbers.length,
+                        median: sorted[Math.floor(sorted.length / 2)],
+                        q1: sorted[q1Idx],
+                        q3: sorted[q3Idx],
+                        raw_values: validNumbers,
+                        data: stats.frequencies ? 
+                            Object.entries(stats.frequencies)
+                                .filter(([key]) => !isNaN(key))
+                                .map(([key, value]) => ({
+                                    name: Number(key),
+                                    value: Number(value)
+                                }))
+                            : validNumbers.map(val => ({
+                                name: val,
+                                value: 1
                             }))
-                        : []
-                };
+                    };
+                }
             }
         });
 
@@ -239,89 +244,178 @@ async function handleAIQuestion() {
         const result = await response.json();
         console.log('Raw AI Response:', result);
 
-        // Extract answer and visualizations
-        const answer = result?.response?.response?.answer || result?.response?.answer;
-        const visualizations = result?.response?.response?.visualizations || result?.response?.visualizations;
-        
+        // Initialize response variables
+        let answer = null;
+        let visualizations = null;
+
+        // Extract data based on response structure
+        if (result.response.error) {
+            // If we have an error in the response, throw it immediately
+            throw new Error(result.response.error);
+        }
+
+        if (typeof result.response === 'string') {
+            // Case 1: Direct string response
+            answer = result.response;
+        } else if (result.response.response && typeof result.response.response === 'object') {
+            // Case 2: Nested response format
+            const nestedResponse = result.response.response;
+            if (nestedResponse.error) {
+                throw new Error(nestedResponse.error);
+            }
+            answer = nestedResponse.answer || null;
+            visualizations = nestedResponse.visualizations || null;
+        } else if (typeof result.response === 'object') {
+            // Case 3: Flat response format
+            answer = result.response.answer || null;
+            visualizations = result.response.visualizations || null;
+        } else {
+            throw new Error('Invalid response: Unrecognized response format');
+        }
+
+        // Validate we have at least one valid response type
+        if (!answer && !visualizations) {
+            throw new Error('Invalid response: Response must contain either answer or visualizations');
+        }
+
+        // Set default message for visualization-only responses
+        if (!answer && visualizations) {
+            answer = "Here are the visualizations based on your request:";
+        }
+
         console.log('Extracted Answer:', answer);
         console.log('Extracted Visualizations:', visualizations);
 
+        // Add the answer to chat
         if (answer) {
-            // First add the analysis text
             addMessage('assistant', answer);
+        }
+
+        // Process visualizations only if we don't have any errors
+        if (visualizations && !result.response.error) {
+            console.log('Processing visualizations:', visualizations);
             
-            // Then handle visualizations
-            if (visualizations) {
-                console.log('Processing visualizations:', visualizations);
-                
-                try {
-                    // If the visualization is an analysis request, process it directly
-                    if (visualizations.analysis_request) {
-                        const data = {
-                            processed_data: context.processed_data,
-                            analysis_request: visualizations.analysis_request
-                        };
-                        await generateVisualizations(data);
-                    } else {
-                        // Convert visualization configs to proper format and inject data
-                        const configs = Array.isArray(visualizations) ? visualizations : [visualizations];
-                        
-                        // Map the configs to include actual data from context
-                        const dataPopulatedConfigs = configs.map(config => {
-                            // If config specifies variables, use them to populate data
-                            if (config.variables) {
-                                const variableData = config.variables.map(v => ({
-                                    name: v,
-                                    values: context.processed_data.preview.map(row => row[v]),
-                                    type: context.processed_data.column_stats[v]?.type
-                                }));
-                                
-                                // Generate visualization based on variable types
-                                return generateAnalysisVisualization(variableData, config.type || 'auto', config.metrics);
-                            }
-                            
-                            // If config has series but no data, try to populate from context
-                            if (config.series) {
-                                config.series = config.series.map(series => {
-                                    if (series.variable) {
-                                        const values = context.processed_data.preview.map(row => row[series.variable]);
-                                        return {
-                                            ...series,
-                                            data: values.filter(v => v != null)
-                                        };
-                                    }
-                                    return series;
-                                });
-                            }
-                            
-                            return config;
-                        }).filter(Boolean); // Remove any null configs
-                        
-                        if (dataPopulatedConfigs.length > 0) {
-                            console.log('Rendering data-populated configs:', dataPopulatedConfigs);
-                            await updateVisualizations(dataPopulatedConfigs);
-                        } else {
-                            console.warn('No valid visualization configs found');
-                            // Generate basic charts as fallback
-                            if (Object.keys(context.processed_data.categorical).length > 0) {
-                                const categoricalCharts = generateCategoricalCharts(context.processed_data);
-                                if (categoricalCharts.length > 0) {
-                                    await updateVisualizations(categoricalCharts);
+            try {
+                // First, validate and transform the data format using AI
+                const dataValidationResponse = await fetch('/ai/validate_data', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        data: context.processed_data,
+                        visualization_request: visualizations,
+                        schema: {
+                            required_fields: ['preview', 'column_stats', 'categorical', 'numeric'],
+                            data_types: {
+                                categorical: {
+                                    frequencies: 'object',
+                                    total: 'number',
+                                    unique_values: 'array',
+                                    data: 'array'
+                                },
+                                numeric: {
+                                    min: 'number',
+                                    max: 'number',
+                                    mean: 'number',
+                                    median: 'number',
+                                    q1: 'number',
+                                    q3: 'number',
+                                    raw_values: 'array',
+                                    data: 'array'
                                 }
                             }
                         }
-                    }
-                } catch (vizError) {
-                    console.error('Visualization generation error:', vizError);
-                    addMessage('error', `Failed to generate visualizations: ${vizError.message}`);
-                }
-            }
-            
-            elements.questionInput.value = '';
-        } else {
-            throw new Error('Invalid response format');
-        }
+                    })
+                });
 
+                if (!dataValidationResponse.ok) {
+                    throw new Error('Failed to validate data format');
+                }
+
+                const validatedData = await dataValidationResponse.json();
+                
+                if (validatedData.error) {
+                    throw new Error(validatedData.error);
+                }
+
+                // Update context with validated and transformed data
+                context.processed_data = validatedData.processed_data;
+
+                // Now proceed with visualization generation using validated data
+                // Case 1: Analysis request format
+                if (visualizations.analysis_request && typeof visualizations.analysis_request === 'object') {
+                    const { variables, type, metrics } = visualizations.analysis_request;
+                    
+                    // Let AI handle the variable selection and transformation if needed
+                    const analysisResponse = await fetch('/ai/prepare_analysis', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            data: context.processed_data,
+                            request: {
+                                variables,
+                                type,
+                                metrics
+                            }
+                        })
+                    });
+
+                    if (!analysisResponse.ok) {
+                        throw new Error('Failed to prepare analysis');
+                    }
+
+                    const analysisData = await analysisResponse.json();
+                    
+                    if (analysisData.error) {
+                        throw new Error(analysisData.error);
+                    }
+
+                    await generateVisualizations(analysisData);
+                    return;
+                }
+
+                // Case 2: Direct visualization configs
+                const configs = Array.isArray(visualizations) ? visualizations : [visualizations];
+                
+                if (configs.length === 0) {
+                    throw new Error('No visualization configs provided');
+                }
+
+                // Let AI transform and validate each config
+                const configValidationResponse = await fetch('/ai/validate_configs', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        configs,
+                        data: context.processed_data
+                    })
+                });
+
+                if (!configValidationResponse.ok) {
+                    throw new Error('Failed to validate visualization configs');
+                }
+
+                const validatedConfigs = await configValidationResponse.json();
+                
+                if (validatedConfigs.error) {
+                    throw new Error(validatedConfigs.error);
+                }
+
+                // Update visualizations with AI-validated configs
+                await updateVisualizations(validatedConfigs.configs);
+            } catch (vizError) {
+                console.error('Visualization generation error:', vizError);
+                addMessage('error', `Failed to generate visualizations: ${vizError.message}`);
+                throw vizError;
+            }
+        }
+        
+        elements.questionInput.value = '';
     } catch (error) {
         console.error('AI Error:', error);
         addMessage('error', `Error: ${error.message}`);
@@ -450,31 +544,22 @@ async function handleVisualizationResponse(response) {
         // Handle both direct visualization configs and analysis requests
         if (Array.isArray(response)) {
             configs = response;
-        } else if (typeof response === 'object' && response.analysis_request) {
-            // Format the analysis request from AI
-            const data = {
-                processed_data: window.appState.currentData,
-                analysis_request: {
-                    variables: response.analysis_request.variables,
-                    type: response.analysis_request.type,
-                    metrics: response.analysis_request.metrics || []
-                }
-            };
-            
-            // Generate visualizations with the analysis request
-            await generateVisualizations(data);
-            return true;
-        } else if (typeof response === 'string' && (response.includes('```echarts') || response.includes('```json'))) {
-            configs = extractVisualizationConfig(response);
+        } else if (typeof response === 'object') {
+            if (response.success === false) {
+                throw new Error(response.error || 'Visualization generation failed');
+            }
+            if (response.visualizations) {
+                configs = response.visualizations;
+            }
         }
         
         if (!configs || configs.length === 0) {
             console.warn('No valid visualization configs found in response');
             return false;
         }
-
+        
         // Enhanced data population and validation
-        const context = window.appState.currentData;
+        const currentData = window.appState.currentData;  // Get the current data
         const dataPopulatedConfigs = configs.map(config => {
             try {
                 // Deep clone to avoid modifying original
@@ -482,7 +567,7 @@ async function handleVisualizationResponse(response) {
                 
                 // Handle dataset source population
                 if (config.dataset && config.dataset.variable) {
-                    const values = context.processed_data.preview.map(row => row[config.dataset.variable]);
+                    const values = currentData.preview.map(row => row[config.dataset.variable]);
                     config.dataset.source = values.filter(v => v != null);
                 }
                 
@@ -491,14 +576,14 @@ async function handleVisualizationResponse(response) {
                     config.series = config.series.map(series => {
                         // Handle direct variable reference
                         if (series.variable) {
-                            const values = context.processed_data.preview.map(row => row[series.variable]);
+                            const values = currentData.preview.map(row => row[series.variable]);
                             series.data = values.filter(v => v != null);
                         }
                         
                         // Handle mapping data from variables
                         if (series.mapping) {
                             const { x, y, category } = series.mapping;
-                            const mappedData = context.processed_data.preview.map(row => {
+                            const mappedData = currentData.preview.map(row => {
                                 const point = {};
                                 if (x) point.value = [row[x], row[y]];
                                 if (category) point.category = row[category];
@@ -518,7 +603,7 @@ async function handleVisualizationResponse(response) {
                 console.error('Error populating data for config:', error);
                 return null;
             }
-        }).filter(Boolean);
+        }).filter(config => config !== null);  // Remove any failed configs
         
         if (dataPopulatedConfigs.length > 0) {
             console.log('Rendering data-populated configs:', dataPopulatedConfigs);
@@ -526,18 +611,10 @@ async function handleVisualizationResponse(response) {
             return true;
         }
         
-        // Fallback to basic charts if no valid configs
-        if (context.processed_data.categorical && Object.keys(context.processed_data.categorical).length > 0) {
-            const categoricalCharts = generateCategoricalCharts(context.processed_data);
-            if (categoricalCharts.length > 0) {
-                await updateVisualizations(categoricalCharts);
-                return true;
-            }
-        }
-        
         return false;
     } catch (error) {
         console.error('Error handling visualization response:', error);
+        showError(error.message);
         return false;
     }
 }
