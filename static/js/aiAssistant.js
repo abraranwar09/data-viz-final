@@ -145,7 +145,6 @@ async function setupAIAssistant() {
 async function handleAIQuestion() {
     console.log('Handling AI question');
     
-    // Get elements with error checking
     const elements = {
         questionInput: document.getElementById('aiQuestion'),
         chatMessages: document.getElementById('chatMessages'),
@@ -197,75 +196,11 @@ async function handleAIQuestion() {
             }
         };
 
-        // Process column statistics and prepare context
-        Object.entries(context.column_stats).forEach(([column, stats]) => {
-            if (!stats) return;
-            
-            // Get column data
-            const columnData = context.processed_data.preview.map(row => row[column]);
-            
-            if (stats.type === 'categorical') {
-                // Process categorical data
-                const frequencies = {};
-                const validValues = columnData.filter(val => val != null && val !== '');
-                validValues.forEach(val => {
-                    frequencies[val] = (frequencies[val] || 0) + 1;
-                });
-                
-                context.processed_data.categorical[column] = {
-                    frequencies,
-                    total: validValues.length,
-                    unique_values: [...new Set(validValues)],
-                    data: Object.entries(frequencies).map(([key, value]) => ({
-                        name: String(key),
-                        value: Number(value)
-                    }))
-                };
-            } else if (stats.type === 'numeric') {
-                // Process numeric data
-                const validNumbers = columnData
-                    .map(val => Number(val))
-                    .filter(val => !isNaN(val));
-                
-                if (validNumbers.length > 0) {
-                    const sorted = [...validNumbers].sort((a, b) => a - b);
-                    const q1Idx = Math.floor(sorted.length * 0.25);
-                    const q3Idx = Math.floor(sorted.length * 0.75);
-                    
-                    context.processed_data.numeric[column] = {
-                        min: Math.min(...validNumbers),
-                        max: Math.max(...validNumbers),
-                        mean: validNumbers.reduce((a, b) => a + b, 0) / validNumbers.length,
-                        median: sorted[Math.floor(sorted.length / 2)],
-                        q1: sorted[q1Idx],
-                        q3: sorted[q3Idx],
-                        raw_values: validNumbers,
-                        data: stats.frequencies ? 
-                            Object.entries(stats.frequencies)
-                                .filter(([key]) => !isNaN(key))
-                                .map(([key, value]) => ({
-                                    name: Number(key),
-                                    value: Number(value)
-                                }))
-                            : validNumbers.map(val => ({
-                                name: val,
-                                value: 1
-                            }))
-                    };
-                }
-            }
-        });
-
-        // Send enhanced context to server
+        // Send request to server
         const response = await fetch('/ai/analyze', {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                question: question,
-                context: context
-            })
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(context)
         });
 
         if (!response.ok) {
@@ -273,188 +208,31 @@ async function handleAIQuestion() {
         }
 
         const result = await response.json();
-        console.log('Raw AI Response:', result);
-
-        // Initialize response variables
-        let answer = null;
-        let visualizations = null;
-
-        // Extract data based on response structure
-        if (result.response.error) {
-            // If we have an error in the response, throw it immediately
-            throw new Error(result.response.error);
-        }
-
-        if (typeof result.response === 'string') {
-            // Case 1: Direct string response
-            answer = result.response;
-        } else if (result.response.response && typeof result.response.response === 'object') {
-            // Case 2: Nested response format
-            const nestedResponse = result.response.response;
-            if (nestedResponse.error) {
-                throw new Error(nestedResponse.error);
-            }
-            answer = nestedResponse.answer || null;
-            visualizations = nestedResponse.visualizations || null;
-        } else if (typeof result.response === 'object') {
-            // Case 3: Flat response format
-            answer = result.response.answer || null;
-            visualizations = result.response.visualizations || null;
-        } else {
-            throw new Error('Invalid response: Unrecognized response format');
-        }
-
-        // Validate we have at least one valid response type
-        if (!answer && !visualizations) {
-            throw new Error('Invalid response: Response must contain either answer or visualizations');
-        }
-
-        // Set default message for visualization-only responses
-        if (!answer && visualizations) {
-            answer = "Here are the visualizations based on your request:";
-        }
-
-        console.log('Extracted Answer:', answer);
-        console.log('Extracted Visualizations:', visualizations);
-
-        // Add the answer to chat
-        if (answer) {
-            addMessage('assistant', answer);
-        }
-
-        // Process visualizations only if we don't have any errors
-        if (visualizations && !result.response.error) {
-            console.log('Processing visualizations:', visualizations);
-            
-            try {
-                // First, validate and transform the data format using AI
-                const dataValidationResponse = await fetch('/ai/validate_data', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({
-                        data: context.processed_data,
-                        visualization_request: visualizations,
-                        schema: {
-                            required_fields: ['preview', 'column_stats', 'categorical', 'numeric'],
-                            data_types: {
-                                categorical: {
-                                    frequencies: 'object',
-                                    total: 'number',
-                                    unique_values: 'array',
-                                    data: 'array'
-                                },
-                                numeric: {
-                                    min: 'number',
-                                    max: 'number',
-                                    mean: 'number',
-                                    median: 'number',
-                                    q1: 'number',
-                                    q3: 'number',
-                                    raw_values: 'array',
-                                    data: 'array'
-                                }
-                            }
-                        }
-                    })
-                });
-
-                if (!dataValidationResponse.ok) {
-                    throw new Error('Failed to validate data format');
-                }
-
-                const validatedData = await dataValidationResponse.json();
-                
-                if (validatedData.error) {
-                    throw new Error(validatedData.error);
-                }
-
-                // Update context with validated and transformed data
-                context.processed_data = validatedData.processed_data;
-
-                // Now proceed with visualization generation using validated data
-                // Case 1: Analysis request format
-                if (visualizations.analysis_request && typeof visualizations.analysis_request === 'object') {
-                    const { variables, type, metrics } = visualizations.analysis_request;
-                    
-                    // Let AI handle the variable selection and transformation if needed
-                    const analysisResponse = await fetch('/ai/prepare_analysis', {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json'
-                        },
-                        body: JSON.stringify({
-                            data: context.processed_data,
-                            request: {
-                                variables,
-                                type,
-                                metrics
-                            }
-                        })
-                    });
-
-                    if (!analysisResponse.ok) {
-                        throw new Error('Failed to prepare analysis');
-                    }
-
-                    const analysisData = await analysisResponse.json();
-                    
-                    if (analysisData.error) {
-                        throw new Error(analysisData.error);
-                    }
-
-                    await generateVisualizations(analysisData);
-                    return;
-                }
-
-                // Case 2: Direct visualization configs
-                const configs = Array.isArray(visualizations) ? visualizations : [visualizations];
-                
-                if (configs.length === 0) {
-                    throw new Error('No visualization configs provided');
-                }
-
-                // Let AI transform and validate each config
-                const configValidationResponse = await fetch('/ai/validate_configs', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({
-                        configs,
-                        data: context.processed_data
-                    })
-                });
-
-                if (!configValidationResponse.ok) {
-                    throw new Error('Failed to validate visualization configs');
-                }
-
-                const validatedConfigs = await configValidationResponse.json();
-                
-                if (validatedConfigs.error) {
-                    throw new Error(validatedConfigs.error);
-                }
-
-                // Update visualizations with AI-validated configs
-                await updateVisualizations(validatedConfigs.configs);
-            } catch (vizError) {
-                console.error('Visualization generation error:', vizError);
-                addMessage('error', `Failed to generate visualizations: ${vizError.message}`);
-                throw vizError;
-            }
+        
+        // Add AI response message
+        if (result.message) {
+            addMessage('assistant', result.message);
         }
         
+        // Handle visualizations from SmartVis
+        if (result.visualizations && result.visualizations.length > 0) {
+            console.log('Received SmartVis visualizations:', result.visualizations);
+            // Update visualizations using the existing visualization system
+            await updateVisualizations(result.visualizations);
+        }
+
+        // Clear input and restore UI
         elements.questionInput.value = '';
+        
     } catch (error) {
-        console.error('AI Error:', error);
+        console.error('Error:', error);
         addMessage('error', `Error: ${error.message}`);
     } finally {
+        // Reset UI state
         elements.questionInput.disabled = false;
         elements.askButton.disabled = false;
         elements.thinkingDots.classList.add('d-none');
-        scrollToBottom();
+        elements.questionInput.focus();
     }
 }
 

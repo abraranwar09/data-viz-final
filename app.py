@@ -15,6 +15,7 @@ import sys
 import logging
 from dotenv import load_dotenv
 from utils.json_sanitizer import sanitize_json
+from utils.smart_vis import SmartVis
 
 # Set up logging
 logging.basicConfig(level=logging.DEBUG)
@@ -798,33 +799,86 @@ def prepareHeatmapData(data):
 
 @app.route('/ai/analyze', methods=['POST'])
 def analyze_data():
-    logger.debug("Received AI analysis request")
     try:
         data = request.get_json()
         if not data:
-            logger.error("No JSON data received")
-            return jsonify({'error': 'No JSON data received'}), 400
-        
-        data = sanitize_json(data)  # Sanitize received data
-        
-        question = data.get('question')
-        context = data.get('context')
-        
-        logger.debug(f"Question: {question}")
-        logger.debug(f"Context: {json.dumps(context)[:200]}...")
-        
-        if not question or not context:
-            logger.error("Missing required parameters")
-            return jsonify({'error': 'Missing required parameters'}), 400
+            return jsonify({'error': 'No data provided'}), 400
 
-        response = get_ai_insights(question, context)
-        sanitized_response = sanitize_json(response)  # Sanitize response before sending
-        logger.debug(f"AI Response: {json.dumps(sanitized_response)[:200]}...")
+        question = data.get('question', '')
+        context = data.get('context', {})
         
-        return jsonify({'response': sanitized_response})
+        # Define the visualization requirements for the LLM
+        llm_prompt = {
+            "task": "data_visualization",
+            "user_request": question,
+            "data": {
+                "preview": context.get('preview', []),
+                "statistics": context.get('column_stats', {}),
+                "summary": context.get('processed_data', {}).get('summary', {})
+            },
+            "output_format": {
+                "type": "echarts_config",
+                "required_elements": [
+                    "title", "tooltip", "xAxis", "yAxis", "series"
+                ],
+                "optional_elements": [
+                    "grid", "legend", "toolbox", "dataZoom"
+                ]
+            },
+            "visualization_guidelines": {
+                "prefer_scatter_for_relationships": True,
+                "max_series": 3,
+                "include_statistics": True,
+                "color_scheme": ["#5470c6", "#91cc75", "#fac858"],
+                "responsive_layout": True
+            }
+        }
+
+        # Get AI insights with visualization configuration
+        insights = get_ai_insights(json.dumps(llm_prompt), context)
+        
+        if not insights or 'error' in insights:
+            return jsonify({'error': insights.get('error', 'Failed to generate visualization')}), 400
+
+        # The LLM should return a properly structured visualization config
+        vis_config = insights.get('visualization', {})
+        
+        # Validate the essential elements are present
+        required_elements = ['title', 'series']
+        if not all(elem in vis_config for elem in required_elements):
+            return jsonify({'error': 'Invalid visualization configuration generated'}), 400
+
+        # Add common styling and responsiveness
+        vis_config.update({
+            'animation': True,
+            'responsive': True,
+            'tooltip': {
+                'trigger': 'axis',
+                'axisPointer': {'type': 'cross'},
+                'backgroundColor': 'rgba(50,50,50,0.7)',
+                'borderColor': '#333',
+                'textStyle': {'color': '#fff'}
+            },
+            'grid': {
+                'left': '5%',
+                'right': '5%',
+                'bottom': '10%',
+                'containLabel': True
+            }
+        })
+
+        response = {
+            'message': insights.get('message', 'Here is your visualization.'),
+            'visualizations': [vis_config]
+        }
+
+        return jsonify(response)
+        
     except Exception as e:
-        logger.exception("Error in AI analysis")
-        return jsonify({'error': f'Error processing request: {str(e)}'}), 500
+        logger.error(f"Error in analyze_data: {str(e)}")
+        return jsonify({
+            'error': f"Visualization generation failed: {str(e)}. Please try rephrasing your request."
+        }), 500
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True)
