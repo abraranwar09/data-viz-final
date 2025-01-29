@@ -58,7 +58,7 @@ def get_ai_insights(question: str, context: Dict[str, Any]) -> Dict[str, Any]:
         except Exception as e:
             logger.error(f"Error in data preprocessing: {str(e)}", exc_info=True)
             raise ValueError(f"Failed to preprocess data: {str(e)}")
-
+        
         # Use LLM to understand the question and data relationships
         try:
             analysis_result = analyze_question_and_data(question, processed_context)
@@ -66,18 +66,18 @@ def get_ai_insights(question: str, context: Dict[str, Any]) -> Dict[str, Any]:
         except Exception as e:
             logger.error(f"Error in question analysis: {str(e)}", exc_info=True)
             raise ValueError(f"Failed to analyze question: {str(e)}")
-
+        
         # Generate visualization configs based on analysis
         try:
             chart_configs = generate_visualization_configs(analysis_result, processed_context)
             logger.debug(f"Generated chart configs: {json.dumps(chart_configs, default=str)}")
-
+            
             if not chart_configs:
                 raise ValueError("No valid chart configurations generated")
         except Exception as e:
             logger.error(f"Error generating visualizations: {str(e)}", exc_info=True)
             raise ValueError(f"Failed to generate visualizations: {str(e)}")
-
+        
         return {
             "answer": analysis_result["explanation"],
             "visualizations": chart_configs
@@ -109,7 +109,7 @@ def preprocess_data_for_visualization(context: Dict[str, Any]) -> Dict[str, Any]
     Handles missing values, mixed types, and automatically detects data patterns.
     """
     logger.debug("Starting data preprocessing")
-
+    
     if not context.get('preview') or not context.get('column_stats'):
         raise ValueError("Invalid data context - missing required fields")
 
@@ -127,13 +127,13 @@ def preprocess_data_for_visualization(context: Dict[str, Any]) -> Dict[str, Any]
     # Process each column with enhanced type detection and validation
     for col, stats in context['column_stats'].items():
         logger.debug(f"Processing column: {col}")
-
+        
         # Extract all non-null values
         values = [
             row.get(col) for row in context['preview']
             if row.get(col) is not None and row.get(col) != ''
         ]
-
+        
         if not values:
             logger.debug(f"No valid values found for column: {col}")
             continue
@@ -148,7 +148,7 @@ def preprocess_data_for_visualization(context: Dict[str, Any]) -> Dict[str, Any]
                          (isinstance(v, str) and v.lower() in ['true', 'false', 'yes', 'no', '0', '1'])),
             'categorical': len(values)  # Default count, will be used if no other type dominates
         }
-
+        
         # Determine dominant type
         dominant_type = max(type_counts.items(), key=lambda x: x[1])[0]
         logger.debug(f"Detected type for {col}: {dominant_type}")
@@ -252,156 +252,25 @@ def preprocess_data_for_visualization(context: Dict[str, Any]) -> Dict[str, Any]
 def analyze_question_and_data(question: str, context: Dict[str, Any]) -> Dict[str, Any]:
     """
     Uses LLM to understand the question and suggest appropriate visualizations.
-    Intelligently matches user intent with data characteristics.
     """
-    logger.debug(f"Analyzing question: {question}")
-
-    # Prepare enhanced context for LLM
-    data_summary = {
-        'available_columns': context['metadata'],
-        'column_stats': context['column_stats'],
-        'relationships': context['relationships'],
-        'data_characteristics': {
-            'total_rows': context['metadata']['total_rows'],
-            'total_columns': context['metadata']['total_columns'],
-            'data_types_available': {
-                'numeric': len(context['metadata']['numeric_columns']),
-                'categorical': len(context['metadata']['categorical_columns']),
-                'datetime': len(context['metadata']['datetime_columns']),
-                'boolean': len(context['metadata']['boolean_columns'])
-            }
-        }
+    # Prepare prompt for the LLM
+    prompt = f"""
+    Analyze this question: "{question}"
+    Available columns and their types:
+    {json.dumps(context['column_stats'], indent=2)}
+    
+    Suggest visualizations that would best answer this question.
+    Consider relationships between columns: {json.dumps(context['relationships'], indent=2)}
+    """
+    
+    # Get LLM response
+    response = get_llm_analysis(prompt)
+    
+    return {
+        "explanation": response["explanation"],
+        "suggested_visualizations": response["visualizations"],
+        "data_requirements": response["data_requirements"]
     }
-
-    # Prepare prompt for the LLM with enhanced context
-    prompt = f"""As a data visualization expert, analyze this request and data to suggest the most insightful visualizations.
-
-Question: "{question}"
-
-Available Data Structure:
-{json.dumps(data_summary, indent=2)}
-
-Consider:
-1. The user's intent and the type of insights they're seeking
-2. The available data types and their relationships
-3. The most effective visualization types for the data
-4. Any data quality issues or limitations
-5. Potential combinations of variables that could provide deeper insights
-
-Provide visualization suggestions that:
-1. Directly answer the user's question
-2. Offer additional relevant insights
-3. Use appropriate chart types for the data
-4. Account for data quality and completeness
-5. Consider both simple and advanced visualization options
-
-Response should include:
-1. A clear explanation of the chosen visualizations
-2. The reasoning behind each visualization choice
-3. Any data limitations or assumptions
-4. Additional insights that might be valuable"""
-
-    try:
-        # Get LLM response
-        response = get_llm_analysis(prompt)
-        logger.debug(f"LLM analysis response received: {json.dumps(response, default=str)}")
-
-        # Validate and enhance the response
-        enhanced_response = {
-            "explanation": response.get("explanation", "Analysis of your data visualization request"),
-            "visualizations": [],
-            "data_requirements": {
-                "required_columns": [],
-                "optional_columns": [],
-                "data_quality_checks": []
-            }
-        }
-
-        # Process each suggested visualization
-        for viz in response.get("visualizations", []):
-            # Validate the visualization suggestion
-            if validate_visualization_suggestion(viz, context):
-                enhanced_response["visualizations"].append(viz)
-
-                # Track required columns
-                if "required_columns" in viz:
-                    enhanced_response["data_requirements"]["required_columns"].extend(viz["required_columns"])
-                if "optional_columns" in viz:
-                    enhanced_response["data_requirements"]["optional_columns"].extend(viz.get("optional_columns", []))
-
-        if not enhanced_response["visualizations"]:
-            # If no valid visualizations, attempt to generate alternative suggestions
-            alternative_viz = generate_alternative_visualizations(question, context)
-            if alternative_viz:
-                enhanced_response["visualizations"] = alternative_viz
-                enhanced_response["explanation"] += "\n\nAlternative visualizations have been suggested based on available data."
-
-        logger.debug(f"Enhanced analysis result: {json.dumps(enhanced_response, default=str)}")
-        return enhanced_response
-
-    except Exception as e:
-        logger.error(f"Error in analyze_question_and_data: {str(e)}", exc_info=True)
-        raise ValueError(f"Failed to analyze question and data: {str(e)}")
-
-
-def generate_alternative_visualizations(question: str, context: Dict[str, Any]) -> List[Dict[str, Any]]:
-    """
-    Generates alternative visualization suggestions when primary analysis fails.
-    """
-    alternatives = []
-
-    # Check available data types
-    numeric_cols = context['metadata']['numeric_columns']
-    categorical_cols = context['metadata']['categorical_columns']
-    datetime_cols = context['metadata']['datetime_columns']
-
-    # Generate basic visualizations based on available data
-    if numeric_cols:
-        # Distribution of numeric values
-        alternatives.append({
-            "type": "boxplot",
-            "title": f"Distribution of {numeric_cols[0]}",
-            "required_columns": [numeric_cols[0]],
-            "explanation": "Shows the distribution and potential outliers"
-        })
-
-    if categorical_cols:
-        # Frequency distribution
-        alternatives.append({
-            "type": "pie",
-            "title": f"Distribution of {categorical_cols[0]}",
-            "required_columns": [categorical_cols[0]],
-            "explanation": "Shows the proportion of each category"
-        })
-
-    if numeric_cols and categorical_cols:
-        # Relationship between numeric and categorical
-        alternatives.append({
-            "type": "bar",
-            "title": f"{numeric_cols[0]} by {categorical_cols[0]}",
-            "required_columns": [numeric_cols[0], categorical_cols[0]],
-            "explanation": "Shows how numeric values vary across categories"
-        })
-
-    if len(numeric_cols) >= 2:
-        # Correlation between numeric variables
-        alternatives.append({
-            "type": "scatter",
-            "title": f"Relationship between {numeric_cols[0]} and {numeric_cols[1]}",
-            "required_columns": [numeric_cols[0], numeric_cols[1]],
-            "explanation": "Shows potential correlations between numeric variables"
-        })
-
-    if datetime_cols and numeric_cols:
-        # Time series
-        alternatives.append({
-            "type": "line",
-            "title": f"{numeric_cols[0]} over {datetime_cols[0]}",
-            "required_columns": [datetime_cols[0], numeric_cols[0]],
-            "explanation": "Shows trends over time"
-        })
-
-    return alternatives
 
 
 def generate_visualization_configs(analysis: Dict[str, Any], context: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -409,15 +278,15 @@ def generate_visualization_configs(analysis: Dict[str, Any], context: Dict[str, 
     Generates concrete visualization configurations based on LLM analysis.
     """
     configs = []
-
+    
     for viz in analysis["suggested_visualizations"]:
         required_columns = viz["required_columns"]
         viz_type = viz["type"]
-
+        
         # Verify we have all required data
         if not all(col in context['visualization_ready_data'] for col in required_columns):
             continue
-
+            
         # Generate appropriate configuration based on visualization type
         if viz_type == "bar":
             config = generate_bar_chart_config(viz, context)
@@ -429,10 +298,10 @@ def generate_visualization_configs(analysis: Dict[str, Any], context: Dict[str, 
             config = generate_pie_chart_config(viz, context)
         else:
             config = generate_default_chart_config(viz, context)
-
+            
         if config:
             configs.append(config)
-
+    
     return configs
 
 
@@ -445,7 +314,7 @@ def identify_column_relationships(context: Dict[str, Any]) -> List[Dict[str, Any
                    if stats['type'] == 'numeric']
     categorical_cols = [col for col, stats in context['column_stats'].items() 
                        if stats['type'] == 'categorical']
-
+    
     # Numeric-Numeric relationships (scatter plots, correlations)
     for i, col1 in enumerate(numeric_cols):
         for col2 in numeric_cols[i+1:]:
@@ -454,7 +323,7 @@ def identify_column_relationships(context: Dict[str, Any]) -> List[Dict[str, Any
                 'columns': [col1, col2],
                 'visualization_types': ['scatter', 'line']
             })
-
+    
     # Categorical-Numeric relationships (box plots, bar charts)
     for cat_col in categorical_cols:
         for num_col in numeric_cols:
@@ -463,14 +332,14 @@ def identify_column_relationships(context: Dict[str, Any]) -> List[Dict[str, Any
                 'columns': [cat_col, num_col],
                 'visualization_types': ['box', 'bar']
             })
-
+    
     return relationships
 
 
 def prepare_data_context(context: Dict[str, Any]) -> Dict[str, Any]:
     """Prepare and validate data context for visualization with enhanced error handling."""
     logger.debug("Starting data context preparation")
-
+    
     try:
         # Validate input context
         if not isinstance(context, dict):
@@ -480,11 +349,11 @@ def prepare_data_context(context: Dict[str, Any]) -> Dict[str, Any]:
         # Extract and validate columns with proper logging
         column_stats = context.get('column_stats', {})
         preview_data = context.get('preview', [])
-
+        
         if not column_stats:
             logger.error("No column statistics found in context")
             return {"success": False, "error": "Missing column statistics"}
-
+            
         if not preview_data:
             logger.error("No preview data found in context")
             return {"success": False, "error": "Missing preview data"}
@@ -493,18 +362,18 @@ def prepare_data_context(context: Dict[str, Any]) -> Dict[str, Any]:
         numeric_cols = []
         categorical_cols = []
         time_cols = []
-
+        
         for col, stats in column_stats.items():
             if not isinstance(stats, dict):
                 logger.warning(f"Invalid statistics format for column {col}")
                 continue
-
+                
             col_type = stats.get('type')
             if col_type == 'numeric':
                 numeric_cols.append(col)
             elif col_type == 'categorical':
                 categorical_cols.append(col)
-
+                
             # Check for temporal columns
             if any(t in col.lower() for t in ['time', 'date', 'year', 'month', 'day']):
                 time_cols.append(col)
@@ -660,7 +529,7 @@ def validate_visualization_suggestion(suggestion: Dict[str, Any],
         base_required = ["chart_type", "title", "explanation"]
         if not all(key in suggestion for key in base_required):
             return False
-
+            
         # Special handling for radar charts
         if suggestion["chart_type"] == "radar":
             x_axis = suggestion.get("x_axis", "")
@@ -671,7 +540,7 @@ def validate_visualization_suggestion(suggestion: Dict[str, Any],
                 return False
             # Verify we have numeric data for radar
             return data["column_stats"][y_axis].get("type") == "numeric"
-
+            
         # Regular charts need both axes
         if suggestion["chart_type"] not in ["pie", "gauge", "funnel"]:
             if not all(key in suggestion for key in ["x_axis", "y_axis"]):
@@ -807,7 +676,7 @@ def validate_chart_data(chart_type: str, data: Dict[str, Any], x_axis: Optional[
                 isinstance(row.get(y_axis), (int, float))
                 for row in preview_data
             )
-
+            
         elif chart_type == 'graph':
             if not all([x_axis, y_axis]):
                 return False
@@ -1164,7 +1033,7 @@ def generate_visualization_config(
         # Enhanced graph chart
         elif chart_type == 'radar':
             return generate_radar_config(data, x_axis, y_axis, title)
-
+            
         elif chart_type == 'graph':
             try:
                 nodes = []
@@ -1369,7 +1238,6 @@ def generate_visualization_config(
                     isinstance(row[x_axis], float) and math.isnan(row[x_axis]))
                 and not (
                     isinstance(row[y_axis], float) and math.isnan(row[y_axis]))
-                )
             ]
         elif chart_type == 'boxplot':
             # For boxplot, we need to calculate the statistical values
@@ -1401,8 +1269,7 @@ def generate_visualization_config(
         elif chart_type == 'heatmap':
             # For heatmap, create a correlation matrix or frequency matrix
             x_values = list(
-                set(str(row[x_axis]) for row in preview_data if x_axis in row)
-            )
+                set(str(row[x_axis]) for row in preview_data if x_axis in row))
             y_values = list(
                 set(str(row[y_axis]) for row in preview_data if y_axis in row))
 
@@ -1691,9 +1558,9 @@ def validate_data_quality(data: Dict[str, Any]) -> str:
         for col in columns:
             null_count = sum(1 for row in preview_data
                              if row.get(col) is None or row.get(col) == '')
-        if null_count > 0:
-            issues.append(
-                f"Column '{col}' has {null_count} missing values")
+            if null_count > 0:
+                issues.append(
+                    f"Column '{col}' has {null_count} missing values")
 
         # Check for NaN values in numeric columns
         for col, stat in stats.items():
@@ -1701,18 +1568,18 @@ def validate_data_quality(data: Dict[str, Any]) -> str:
                 nan_count = sum(1 for row in preview_data
                                 if isinstance(row.get(col), float)
                                 and math.isnan(row.get(col)))
-        if nan_count > 0:
-            issues.append(f"Column '{col}' has {nan_count} NaN values")
+            if nan_count > 0:
+                issues.append(f"Column '{col}' has {nan_count} NaN values")
 
         # Check for inconsistent data types
         for col in columns:
             types_found = set(
                 type(row.get(col)) for row in preview_data
                 if row.get(col) is not None)
-        if len(types_found) > 1:
-            issues.append(
-                f"Column '{col}' has mixed data types: {', '.join(str(t) for t in types_found)}"
-            )
+            if len(types_found) > 1:
+                issues.append(
+                    f"Column '{col}' has mixed data types: {', '.join(str(t) for t in types_found)}"
+                )
 
         if issues:
             return "Data Quality Issues Found:\n- " + "\n- ".join(
@@ -1770,11 +1637,11 @@ def get_visualization_configs(data: Dict[str, Any]) -> Dict[str, Any]:
     if not openai_client:
         logger.error("OpenAI client not initialized")
         raise APIKeyError("OpenAI client is not properly initialized")
-
+        
     # Extract numeric and categorical columns with data validation
     numeric_cols = []
     categorical_cols = []
-
+    
     for col, stats in data.get('column_stats', {}).items():
         if stats.get('type') == 'numeric' and stats.get('valid_count', 0) > 0:
             numeric_cols.append(col)
@@ -1955,7 +1822,7 @@ def generate_radar_config(data: Dict[str, Any], x_axis: str, y_axis: str, title:
         categories = list(set(str(row.get(x_axis, '')) 
                             for row in data.get('preview', [])
                             if row.get(x_axis) is not None))
-
+        
         # Calculate average values for each category
         values = []
         for category in categories:
@@ -1969,7 +1836,7 @@ def generate_radar_config(data: Dict[str, Any], x_axis: str, y_axis: str, title:
                 values.append(sum(category_values) / len(category_values))
             else:
                 values.append(0)
-
+        
         return {
             'title': {'text': title},
             'tooltip': {'trigger': 'item'},
