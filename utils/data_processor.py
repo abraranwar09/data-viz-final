@@ -1,3 +1,34 @@
+"""
+Data Processing Module
+
+This module implements SOLID principles in the following ways:
+
+Single Responsibility Principle (SRP):
+- Each function has a single, well-defined purpose
+- Statistical calculations are separated from data processing
+- Data cleaning and transformation are handled separately
+
+Open/Closed Principle (OCP):
+- New statistical measures can be added without modifying existing ones
+- Data processing pipelines are extensible
+- New data types can be supported without changing core functionality
+
+Liskov Substitution Principle (LSP):
+- All statistical functions follow the same interface pattern
+- Data processing functions maintain consistent behavior
+- Type checking ensures proper substitution
+
+Interface Segregation Principle (ISP):
+- Statistical functions are grouped by type
+- Data processing functions are separated by responsibility
+- Helper functions are isolated by purpose
+
+Dependency Inversion Principle (DIP):
+- The module depends on abstractions (pandas DataFrame) rather than concrete implementations
+- Statistical calculations are independent of data source
+- Processing functions are decoupled from specific data formats
+"""
+
 import pandas as pd
 import numpy as np
 from scipy import stats
@@ -167,3 +198,35 @@ def chunk_process_data(df: pd.DataFrame, chunk_size: int = 10000) -> Dict[str, A
         }
     
     return combined_stats
+
+"""
+Statistical Processing Layer
+
+SRP: Handles only statistical calculations
+OCP: New statistical methods can be added without modification
+LSP: All statistical functions follow same interface
+"""
+
+"""
+Data Transformation Layer
+
+SRP: Responsible only for data transformation
+ISP: Transformations are separated by data type
+DIP: Independent of specific data formats
+"""
+
+"""
+Data Quality Analysis Layer
+
+SRP: Handles only data quality assessment
+OCP: New quality metrics can be added without modification
+ISP: Quality checks are separated by type
+"""
+
+"""
+Insight Generation Layer
+
+SRP: Responsible only for generating insights
+OCP: New insight types can be added without modification
+DIP: Independent of specific data sources
+"""

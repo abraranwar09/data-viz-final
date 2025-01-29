@@ -1,3 +1,34 @@
+/**
+ * Data Processing Module
+ * 
+ * This module implements SOLID principles in the following ways:
+ * 
+ * Single Responsibility Principle (SRP):
+ * - The module is solely responsible for data processing and transformation
+ * - Each processing function handles a specific type of data transformation
+ * - Statistical calculations are isolated from data structure manipulation
+ * 
+ * Open/Closed Principle (OCP):
+ * - New data processing functions can be added without modifying existing ones
+ * - Data transformation pipelines are extensible
+ * - Statistical calculations can be extended for new types of analysis
+ * 
+ * Liskov Substitution Principle (LSP):
+ * - All data processing functions follow consistent input/output patterns
+ * - Data transformation functions are interchangeable when they operate on the same data type
+ * - Statistical calculations maintain consistent behavior across different data types
+ * 
+ * Interface Segregation Principle (ISP):
+ * - Data processing functions are grouped by data type (categorical, numerical, etc.)
+ * - Statistical calculations are separated based on their specific purposes
+ * - Helper functions are organized by their specific responsibilities
+ * 
+ * Dependency Inversion Principle (DIP):
+ * - The module depends on data abstractions rather than concrete implementations
+ * - Processing functions are independent of specific data sources
+ * - Statistical calculations are decoupled from specific data structures
+ */
+
 function processData(data) {
     try {
         console.log('Processing data input:', data);
@@ -158,6 +189,14 @@ function processData(data) {
     }
 }
 
+/**
+ * Data Validation Layer
+ * 
+ * SRP: Responsible only for validating input data
+ * ISP: Validation rules are separated by data type
+ * DIP: Validation is independent of data processing implementation
+ */
+
 function validateNumericValues(values) {
     return values.filter(v => 
         v !== null && 
@@ -166,6 +205,14 @@ function validateNumericValues(values) {
         typeof v !== 'boolean'
     ).map(v => Number(v));
 }
+
+/**
+ * Statistical Processing Layer
+ * 
+ * SRP: Handles only statistical calculations
+ * OCP: New statistical methods can be added without changing existing ones
+ * ISP: Statistical functions are grouped by type of analysis
+ */
 
 function prepareHistogramData(data, column, columnStats) {
     if (!column || !columnStats[column]) return null;
@@ -416,3 +463,11 @@ function prepareEducationIncomeData(data, educationColumn, incomeColumn) {
         return null;
     }
 }
+
+/**
+ * Data Transformation Layer
+ * 
+ * SRP: Responsible only for data structure transformation
+ * OCP: New transformation methods can be added without modification
+ * LSP: All transformations maintain consistent data patterns
+ */

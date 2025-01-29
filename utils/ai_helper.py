@@ -2,8 +2,8 @@ import os
 from typing import Dict, Any, List, Optional
 from openai import OpenAI
 from openai.types.chat import (ChatCompletionMessageParam,
-    ChatCompletionSystemMessageParam,
-    ChatCompletionUserMessageParam,
+                               ChatCompletionSystemMessageParam,
+                               ChatCompletionUserMessageParam,
                                ChatCompletionFunctionMessageParam)
 import json
 import requests
@@ -55,33 +55,43 @@ def get_ai_insights(question: str, context: Dict[str, Any]) -> Dict[str, Any]:
         try:
             logger.info("Preprocessing data for visualization")
             processed_context = preprocess_data_for_visualization(context)
-            logger.debug(f"Processed context: {json.dumps(processed_context, default=str)}")
+            logger.debug(
+                f"Processed context: {json.dumps(processed_context, default=str)}"
+            )
         except Exception as e:
-            logger.error(f"Error in data preprocessing: {str(e)}", exc_info=True)
+            logger.error(f"Error in data preprocessing: {str(e)}",
+                         exc_info=True)
             raise ValueError(f"Failed to preprocess data: {str(e)}")
-        
+
         # Use LLM to understand the question and data relationships
         try:
             logger.info("Analyzing question and data relationships")
-            analysis_result = analyze_question_and_data(question, processed_context)
-            logger.debug(f"Analysis result: {json.dumps(analysis_result, default=str)}")
+            analysis_result = analyze_question_and_data(
+                question, processed_context)
+            logger.debug(
+                f"Analysis result: {json.dumps(analysis_result, default=str)}")
         except Exception as e:
-            logger.error(f"Error in question analysis: {str(e)}", exc_info=True)
+            logger.error(f"Error in question analysis: {str(e)}",
+                         exc_info=True)
             raise ValueError(f"Failed to analyze question: {str(e)}")
-        
+
         # Generate visualization configs based on analysis
         try:
             logger.info("Generating visualization configurations")
-            chart_configs = generate_visualization_configs(analysis_result, processed_context)
-            logger.debug(f"Generated chart configs: {json.dumps(chart_configs, default=str)}")
-            
+            chart_configs = generate_visualization_configs(
+                analysis_result, processed_context)
+            logger.debug(
+                f"Generated chart configs: {json.dumps(chart_configs, default=str)}"
+            )
+
             if not chart_configs:
                 logger.error("No valid chart configurations generated")
                 raise ValueError("No valid chart configurations generated")
         except Exception as e:
-            logger.error(f"Error generating visualizations: {str(e)}", exc_info=True)
+            logger.error(f"Error generating visualizations: {str(e)}",
+                         exc_info=True)
             raise ValueError(f"Failed to generate visualizations: {str(e)}")
-        
+
         logger.info("Successfully generated visualizations")
         return {
             "answer": analysis_result["explanation"],
@@ -90,14 +100,19 @@ def get_ai_insights(question: str, context: Dict[str, Any]) -> Dict[str, Any]:
     except Exception as e:
         logger.error(f"Error in get_ai_insights: {str(e)}", exc_info=True)
         return {
-            "error": str(e),
+            "error":
+            str(e),
             "visualizations": [{
-                'title': {'text': 'Error Processing Request'},
+                'title': {
+                    'text': 'Error Processing Request'
+                },
                 'tooltip': {},
                 'series': [{
                     'type': 'bar',
                     'data': [1],
-                    'itemStyle': {'color': '#fd666d'},
+                    'itemStyle': {
+                        'color': '#fd666d'
+                    },
                     'label': {
                         'show': True,
                         'position': 'top',
@@ -108,21 +123,22 @@ def get_ai_insights(question: str, context: Dict[str, Any]) -> Dict[str, Any]:
         }
 
 
-def preprocess_data_for_visualization(context: Dict[str, Any]) -> Dict[str, Any]:
+def preprocess_data_for_visualization(
+        context: Dict[str, Any]) -> Dict[str, Any]:
     """
     Ensures data is ready for visualization by intelligently processing any data structure.
     Handles missing values, mixed types, and automatically detects data patterns.
     """
     logger.debug("Starting data preprocessing")
-    
+
     # First check if we have a valid context
     if not isinstance(context, dict):
         raise ValueError("Invalid data context - must be a dictionary")
-        
+
     if not context.get('success', False):
         # If context already has an error, propagate it
         return context
-    
+
     if not context.get('preview') or not context.get('column_stats'):
         raise ValueError("Invalid data context - missing required fields")
 
@@ -142,26 +158,33 @@ def preprocess_data_for_visualization(context: Dict[str, Any]) -> Dict[str, Any]
         # Process each column with enhanced type detection and validation
         for col, stats in context['column_stats'].items():
             logger.debug(f"Processing column: {col}")
-            
+
             # Extract all non-null values
             values = [
                 row.get(col) for row in context['preview']
                 if row.get(col) is not None and row.get(col) != ''
             ]
-            
+
             if not values:
                 logger.debug(f"No valid values found for column: {col}")
                 continue
 
             # Enhanced type detection
             type_counts = {
-                'numeric': sum(1 for v in values if isinstance(v, (int, float)) or 
-                             (isinstance(v, str) and v.replace('.', '').replace('-', '').isdigit())),
-                'datetime': sum(1 for v in values if isinstance(v, str) and 
-                              any(v.count(sep) >= 2 for sep in ['/', '-', ':'])),
-                'boolean': sum(1 for v in values if isinstance(v, bool) or 
-                             (isinstance(v, str) and v.lower() in ['true', 'false', 'yes', 'no', '0', '1'])),
-                'categorical': len(values)  # Default count, will be used if no other type dominates
+                'numeric':
+                sum(1 for v in values if isinstance(v, (int, float)) or (
+                    isinstance(v, str)
+                    and v.replace('.', '').replace('-', '').isdigit())),
+                'datetime':
+                sum(1 for v in values if isinstance(v, str) and any(
+                    v.count(sep) >= 2 for sep in ['/', '-', ':'])),
+                'boolean':
+                sum(1 for v in values
+                    if isinstance(v, bool) or (isinstance(v, str) and v.lower(
+                    ) in ['true', 'false', 'yes', 'no', '0', '1'])),
+                'categorical':
+                len(values
+                    )  # Default count, will be used if no other type dominates
             }
 
             # Determine dominant type
@@ -178,24 +201,37 @@ def preprocess_data_for_visualization(context: Dict[str, Any]) -> Dict[str, Any]
                                 numeric_values.append(float(v))
                             elif isinstance(v, str):
                                 # Remove currency symbols and commas
-                                cleaned = v.replace('$', '').replace(',', '').strip()
-                                if cleaned.replace('.', '').replace('-', '').isdigit():
+                                cleaned = v.replace('$',
+                                                    '').replace(',',
+                                                                '').strip()
+                                if cleaned.replace('.',
+                                                   '').replace('-',
+                                                               '').isdigit():
                                     numeric_values.append(float(cleaned))
                         except (ValueError, TypeError):
                             continue
 
                     if numeric_values:
                         processed['column_stats'][col] = {
-                            'type': 'numeric',
-                            'min': min(numeric_values),
-                            'max': max(numeric_values),
-                            'mean': sum(numeric_values) / len(numeric_values),
-                            'median': sorted(numeric_values)[len(numeric_values)//2],
-                            'unique_count': len(set(numeric_values)),
-                            'null_count': len(context['preview']) - len(values),
-                            'values': numeric_values
+                            'type':
+                            'numeric',
+                            'min':
+                            min(numeric_values),
+                            'max':
+                            max(numeric_values),
+                            'mean':
+                            sum(numeric_values) / len(numeric_values),
+                            'median':
+                            sorted(numeric_values)[len(numeric_values) // 2],
+                            'unique_count':
+                            len(set(numeric_values)),
+                            'null_count':
+                            len(context['preview']) - len(values),
+                            'values':
+                            numeric_values
                         }
-                        processed['visualization_ready_data'][col] = numeric_values
+                        processed['visualization_ready_data'][
+                            col] = numeric_values
 
                 elif dominant_type == 'datetime':
                     # Store original values but mark as datetime for special handling
@@ -209,9 +245,17 @@ def preprocess_data_for_visualization(context: Dict[str, Any]) -> Dict[str, Any]
 
                 elif dominant_type == 'boolean':
                     # Normalize boolean values
-                    bool_map = {'true': True, 'false': False, 'yes': True, 'no': False, '1': True, '0': False}
+                    bool_map = {
+                        'true': True,
+                        'false': False,
+                        'yes': True,
+                        'no': False,
+                        '1': True,
+                        '0': False
+                    }
                     bool_values = [
-                        bool_map[str(v).lower()] if str(v).lower() in bool_map else bool(v)
+                        bool_map[str(v).lower()]
+                        if str(v).lower() in bool_map else bool(v)
                         for v in values
                     ]
                     processed['column_stats'][col] = {
@@ -228,16 +272,24 @@ def preprocess_data_for_visualization(context: Dict[str, Any]) -> Dict[str, Any]
                     value_counts = {}
                     for v in values:
                         str_val = str(v)
-                        value_counts[str_val] = value_counts.get(str_val, 0) + 1
+                        value_counts[str_val] = value_counts.get(str_val,
+                                                                 0) + 1
 
                     processed['column_stats'][col] = {
-                        'type': 'categorical',
-                        'unique_values': list(value_counts.keys()),
-                        'frequencies': value_counts,
-                        'unique_count': len(value_counts),
-                        'null_count': len(context['preview']) - len(values),
-                        'most_common': max(value_counts.items(), key=lambda x: x[1])[0],
-                        'values': values
+                        'type':
+                        'categorical',
+                        'unique_values':
+                        list(value_counts.keys()),
+                        'frequencies':
+                        value_counts,
+                        'unique_count':
+                        len(value_counts),
+                        'null_count':
+                        len(context['preview']) - len(values),
+                        'most_common':
+                        max(value_counts.items(), key=lambda x: x[1])[0],
+                        'values':
+                        values
                     }
                     processed['visualization_ready_data'][col] = value_counts
 
@@ -247,17 +299,30 @@ def preprocess_data_for_visualization(context: Dict[str, Any]) -> Dict[str, Any]
 
         # Identify relationships between columns
         try:
-            processed['relationships'] = identify_column_relationships(processed)
+            processed['relationships'] = identify_column_relationships(
+                processed)
         except Exception as e:
             logger.error(f"Error identifying relationships: {str(e)}")
             processed['relationships'] = []
 
         # Add metadata about processed data
         processed['metadata'].update({
-            'numeric_columns': [col for col, stats in processed['column_stats'].items() if stats['type'] == 'numeric'],
-            'categorical_columns': [col for col, stats in processed['column_stats'].items() if stats['type'] == 'categorical'],
-            'datetime_columns': [col for col, stats in processed['column_stats'].items() if stats['type'] == 'datetime'],
-            'boolean_columns': [col for col, stats in processed['column_stats'].items() if stats['type'] == 'boolean']
+            'numeric_columns': [
+                col for col, stats in processed['column_stats'].items()
+                if stats['type'] == 'numeric'
+            ],
+            'categorical_columns': [
+                col for col, stats in processed['column_stats'].items()
+                if stats['type'] == 'categorical'
+            ],
+            'datetime_columns': [
+                col for col, stats in processed['column_stats'].items()
+                if stats['type'] == 'datetime'
+            ],
+            'boolean_columns': [
+                col for col, stats in processed['column_stats'].items()
+                if stats['type'] == 'boolean'
+            ]
         })
 
         logger.debug("Data preprocessing completed successfully")
@@ -271,10 +336,11 @@ def preprocess_data_for_visualization(context: Dict[str, Any]) -> Dict[str, Any]
         }
 
 
-def analyze_question_and_data(question: str, context: Dict[str, Any]) -> Dict[str, Any]:
+def analyze_question_and_data(question: str,
+                              context: Dict[str, Any]) -> Dict[str, Any]:
     """Analyze the question and data to determine appropriate visualizations."""
     logger.info(f"Analyzing question: {question}")
-    
+
     try:
         # Extract key information from the question
         logger.debug("Extracting key information from question")
@@ -283,8 +349,9 @@ def analyze_question_and_data(question: str, context: Dict[str, Any]) -> Dict[st
             'target_columns': extract_target_columns(question, context),
             'aggregation': extract_aggregation_info(question)
         }
-        logger.debug(f"Question analysis: {json.dumps(question_info, default=str)}")
-        
+        logger.debug(
+            f"Question analysis: {json.dumps(question_info, default=str)}")
+
         # Analyze data characteristics
         logger.debug("Analyzing data characteristics")
         data_info = {
@@ -296,44 +363,52 @@ def analyze_question_and_data(question: str, context: Dict[str, Any]) -> Dict[st
             'data_quality': validate_data_quality(context)
         }
         logger.debug(f"Data analysis: {json.dumps(data_info, default=str)}")
-        
+
         # Generate explanation
         explanation = generate_analysis_explanation(question_info, data_info)
         logger.info("Analysis completed successfully")
-        
+
         return {
             'question_analysis': question_info,
             'data_analysis': data_info,
             'explanation': explanation
         }
     except Exception as e:
-        logger.error(f"Error in analyze_question_and_data: {str(e)}", exc_info=True)
+        logger.error(f"Error in analyze_question_and_data: {str(e)}",
+                     exc_info=True)
         raise
 
 
-def generate_visualization_configs(analysis: Dict[str, Any], context: Dict[str, Any]) -> List[Dict[str, Any]]:
+def generate_visualization_configs(
+        analysis: Dict[str, Any], context: Dict[str,
+                                                Any]) -> List[Dict[str, Any]]:
     """Generate visualization configurations based on analysis."""
     logger.info("Generating visualization configurations")
-    
+
     try:
         configs = []
         question_info = analysis['question_analysis']
         data_info = analysis['data_analysis']
-        
+
         # Generate main visualization based on question
         logger.debug("Generating main visualization")
         main_config = generate_main_visualization(question_info, context)
         if main_config:
-            logger.debug(f"Main visualization config: {json.dumps(main_config, default=str)}")
+            logger.debug(
+                f"Main visualization config: {json.dumps(main_config, default=str)}"
+            )
             configs.append(main_config)
-        
+
         # Generate supporting visualizations
         logger.debug("Generating supporting visualizations")
-        supporting_configs = generate_supporting_visualizations(question_info, data_info, context)
+        supporting_configs = generate_supporting_visualizations(
+            question_info, data_info, context)
         if supporting_configs:
-            logger.debug(f"Supporting visualization configs: {json.dumps(supporting_configs, default=str)}")
+            logger.debug(
+                f"Supporting visualization configs: {json.dumps(supporting_configs, default=str)}"
+            )
             configs.extend(supporting_configs)
-        
+
         # Validate all configurations
         logger.debug("Validating visualization configurations")
         valid_configs = []
@@ -342,40 +417,46 @@ def generate_visualization_configs(analysis: Dict[str, Any], context: Dict[str, 
                 if validate_visualization_config(config, context):
                     valid_configs.append(config)
                 else:
-                    logger.warning(f"Invalid visualization config: {json.dumps(config, default=str)}")
+                    logger.warning(
+                        f"Invalid visualization config: {json.dumps(config, default=str)}"
+                    )
             except Exception as e:
                 logger.error(f"Error validating config: {str(e)}")
                 continue
-        
-        logger.info(f"Generated {len(valid_configs)} valid visualization configurations")
+
+        logger.info(
+            f"Generated {len(valid_configs)} valid visualization configurations"
+        )
         return valid_configs
     except Exception as e:
-        logger.error(f"Error in generate_visualization_configs: {str(e)}", exc_info=True)
+        logger.error(f"Error in generate_visualization_configs: {str(e)}",
+                     exc_info=True)
         raise
 
 
-def validate_visualization_config(config: Dict[str, Any], context: Dict[str, Any]) -> bool:
+def validate_visualization_config(config: Dict[str, Any],
+                                  context: Dict[str, Any]) -> bool:
     """Validate a visualization configuration."""
     logger.debug(f"Validating config: {json.dumps(config, default=str)}")
-    
+
     try:
         # Check basic structure
         if not isinstance(config, dict):
             logger.error("Config is not a dictionary")
             return False
-            
+
         # Validate required fields
         required_fields = ['title', 'series']
         for field in required_fields:
             if field not in config:
                 logger.error(f"Missing required field: {field}")
                 return False
-        
+
         # Validate series data
         if not isinstance(config['series'], list):
             logger.error("Series is not a list")
             return False
-            
+
         for series in config['series']:
             if not isinstance(series, dict):
                 logger.error("Series item is not a dictionary")
@@ -386,7 +467,7 @@ def validate_visualization_config(config: Dict[str, Any], context: Dict[str, Any
             if 'data' not in series and 'source' not in series:
                 logger.error("Series missing data/source")
                 return False
-        
+
         logger.debug("Config validation successful")
         return True
     except Exception as e:
@@ -394,25 +475,30 @@ def validate_visualization_config(config: Dict[str, Any], context: Dict[str, Any
         return False
 
 
-def identify_column_relationships(context: Dict[str, Any]) -> List[Dict[str, Any]]:
+def identify_column_relationships(
+        context: Dict[str, Any]) -> List[Dict[str, Any]]:
     """
     Identifies potential relationships between columns for visualization.
     """
     relationships = []
-    numeric_cols = [col for col, stats in context['column_stats'].items() 
-                   if stats['type'] == 'numeric']
-    categorical_cols = [col for col, stats in context['column_stats'].items() 
-                       if stats['type'] == 'categorical']
-    
+    numeric_cols = [
+        col for col, stats in context['column_stats'].items()
+        if stats['type'] == 'numeric'
+    ]
+    categorical_cols = [
+        col for col, stats in context['column_stats'].items()
+        if stats['type'] == 'categorical'
+    ]
+
     # Numeric-Numeric relationships (scatter plots, correlations)
     for i, col1 in enumerate(numeric_cols):
-        for col2 in numeric_cols[i+1:]:
+        for col2 in numeric_cols[i + 1:]:
             relationships.append({
                 'type': 'numeric_numeric',
                 'columns': [col1, col2],
                 'visualization_types': ['scatter', 'line']
             })
-    
+
     # Categorical-Numeric relationships (box plots, bar charts)
     for cat_col in categorical_cols:
         for num_col in numeric_cols:
@@ -421,14 +507,14 @@ def identify_column_relationships(context: Dict[str, Any]) -> List[Dict[str, Any
                 'columns': [cat_col, num_col],
                 'visualization_types': ['box', 'bar']
             })
-    
+
     return relationships
 
 
 def prepare_data_context(context: Dict[str, Any]) -> Dict[str, Any]:
     """Prepare and validate data context for visualization with enhanced error handling."""
     logger.debug("Starting data context preparation")
-    
+
     try:
         # Validate input context
         if not isinstance(context, dict):
@@ -438,11 +524,11 @@ def prepare_data_context(context: Dict[str, Any]) -> Dict[str, Any]:
         # Extract and validate columns with proper logging
         column_stats = context.get('column_stats', {})
         preview_data = context.get('preview', [])
-        
+
         if not column_stats:
             logger.error("No column statistics found in context")
             return {"success": False, "error": "Missing column statistics"}
-            
+
         if not preview_data:
             logger.error("No preview data found in context")
             return {"success": False, "error": "Missing preview data"}
@@ -451,45 +537,58 @@ def prepare_data_context(context: Dict[str, Any]) -> Dict[str, Any]:
         numeric_cols = []
         categorical_cols = []
         time_cols = []
-        
+
         for col, stats in column_stats.items():
             if not isinstance(stats, dict):
                 logger.warning(f"Invalid statistics format for column {col}")
                 continue
-                
+
             col_type = stats.get('type')
             if col_type == 'numeric':
                 numeric_cols.append(col)
             elif col_type == 'categorical':
                 categorical_cols.append(col)
-                
+
             # Check for temporal columns
-            if any(t in col.lower() for t in ['time', 'date', 'year', 'month', 'day']):
+            if any(t in col.lower()
+                   for t in ['time', 'date', 'year', 'month', 'day']):
                 time_cols.append(col)
 
-        logger.debug(f"Found {len(numeric_cols)} numeric, {len(categorical_cols)} categorical, and {len(time_cols)} temporal columns")
+        logger.debug(
+            f"Found {len(numeric_cols)} numeric, {len(categorical_cols)} categorical, and {len(time_cols)} temporal columns"
+        )
 
         # Validate data availability for visualization
         if not numeric_cols and not categorical_cols:
             logger.error("No valid columns found for visualization")
             return {
-                "success": False,
-                "error": "No numeric or categorical data available for visualization"
+                "success":
+                False,
+                "error":
+                "No numeric or categorical data available for visualization"
             }
 
         # Prepare enhanced context with metadata
         data_context = {
-            "success": True,  # Add success flag
-            "numeric_columns": numeric_cols,
-            "categorical_columns": categorical_cols,
-            "time_columns": time_cols,
-            "total_rows": len(preview_data),
+            "success":
+            True,  # Add success flag
+            "numeric_columns":
+            numeric_cols,
+            "categorical_columns":
+            categorical_cols,
+            "time_columns":
+            time_cols,
+            "total_rows":
+            len(preview_data),
             "column_stats": {
-                col: stats for col, stats in column_stats.items()
+                col: stats
+                for col, stats in column_stats.items()
                 if isinstance(stats, dict)
             },
-            "preview": preview_data[:10],  # Limit preview data
-            "columns": list(column_stats.keys()),
+            "preview":
+            preview_data[:10],  # Limit preview data
+            "columns":
+            list(column_stats.keys()),
             "metadata": {
                 "numeric_count": len(numeric_cols),
                 "categorical_count": len(categorical_cols),
@@ -534,12 +633,21 @@ def extract_visualization_suggestions(
 
         # Prepare data context for GPT
         data_context = {
-            "numeric_columns": numeric_cols,
-            "categorical_columns": categorical_cols,
-            "time_columns": time_cols,
-            "total_rows": data.get('summary', {}).get('rows', 0),
-            "column_stats": data.get('column_stats', {}),
-            "available_chart_types": ["bar", "line", "scatter", "pie", "boxplot", "heatmap", "treemap", "sunburst", "gauge", "funnel", "candlestick", "graph", "themeRiver", "parallel"]
+            "numeric_columns":
+            numeric_cols,
+            "categorical_columns":
+            categorical_cols,
+            "time_columns":
+            time_cols,
+            "total_rows":
+            data.get('summary', {}).get('rows', 0),
+            "column_stats":
+            data.get('column_stats', {}),
+            "available_chart_types": [
+                "bar", "line", "scatter", "pie", "boxplot", "heatmap",
+                "treemap", "sunburst", "gauge", "funnel", "candlestick",
+                "graph", "themeRiver", "parallel"
+            ]
         }
 
         # Ask GPT-4 for visualization suggestions
@@ -577,11 +685,12 @@ Ensure all recommendations are clear, actionable, and properly justified with an
                 "role": "system",
                 "content": system_prompt
             }, {
-                "role": "user",
-                "content": f"Data context:\n{json.dumps(data_context, indent=2)}"
+                "role":
+                "user",
+                "content":
+                f"Data context:\n{json.dumps(data_context, indent=2)}"
             }],
-            temperature=0.2
-        )
+            temperature=0.2)
 
         # Parse GPT's suggestions
         content = response.choices[0].message.content
@@ -615,23 +724,27 @@ def validate_visualization_suggestion(suggestion: Dict[str, Any],
         base_required = ["chart_type", "title", "explanation"]
         if not all(key in suggestion for key in base_required):
             return False
-            
+
         # Special handling for radar charts
         if suggestion["chart_type"] == "radar":
             x_axis = suggestion.get("x_axis", "")
             y_axis = suggestion.get("y_axis", "")
             if not x_axis or not y_axis:
                 return False
-            if x_axis not in data.get("column_stats", {}) or y_axis not in data.get("column_stats", {}):
+            if x_axis not in data.get("column_stats",
+                                      {}) or y_axis not in data.get(
+                                          "column_stats", {}):
                 return False
             # Verify we have numeric data for radar
             return data["column_stats"][y_axis].get("type") == "numeric"
-            
+
         # Regular charts need both axes
         if suggestion["chart_type"] not in ["pie", "gauge", "funnel"]:
             if not all(key in suggestion for key in ["x_axis", "y_axis"]):
                 return False
-            if not all(key in data["column_stats"] for key in [suggestion["x_axis"], suggestion["y_axis"]]):
+            if not all(
+                    key in data["column_stats"]
+                    for key in [suggestion["x_axis"], suggestion["y_axis"]]):
                 return False
 
         return True
@@ -701,7 +814,10 @@ def generate_basic_suggestions(data: Dict[str, Any]) -> List[Dict[str, Any]]:
     return suggestions
 
 
-def validate_chart_data(chart_type: str, data: Dict[str, Any], x_axis: Optional[str] = None, y_axis: Optional[str] = None) -> bool:
+def validate_chart_data(chart_type: str,
+                        data: Dict[str, Any],
+                        x_axis: Optional[str] = None,
+                        y_axis: Optional[str] = None) -> bool:
     """Validate data requirements for specific chart types"""
     try:
         preview_data = data.get('preview', [])
@@ -725,10 +841,9 @@ def validate_chart_data(chart_type: str, data: Dict[str, Any], x_axis: Optional[
             # Check if all dimensions have valid data
             dimensions = list(preview_data[0].keys())
             return all(
-                any(isinstance(row.get(dim), (int, float, str)) 
-                    for row in preview_data)
-                for dim in dimensions
-            )
+                any(
+                    isinstance(row.get(dim), (int, float, str))
+                    for row in preview_data) for dim in dimensions)
 
         elif chart_type == 'funnel':
             if not x_axis:
@@ -746,32 +861,26 @@ def validate_chart_data(chart_type: str, data: Dict[str, Any], x_axis: Optional[
             if not all([x_axis, y_axis]):
                 return False
             # Check if we can create meaningful hierarchy
-            return all(
-                x_axis in row and y_axis in row and 
-                row[x_axis] is not None and row[y_axis] is not None
-                for row in preview_data
-            )
+            return all(x_axis in row and y_axis in row
+                       and row[x_axis] is not None and row[y_axis] is not None
+                       for row in preview_data)
 
         elif chart_type == 'radar':
             if not all([x_axis, y_axis]):
                 return False
             # Check if we have categories and numeric values
             return all(
-                x_axis in row and y_axis in row and
-                row[x_axis] is not None and 
-                isinstance(row.get(y_axis), (int, float))
-                for row in preview_data
-            )
-            
+                x_axis in row and y_axis in row and row[x_axis] is not None
+                and isinstance(row.get(y_axis), (int, float))
+                for row in preview_data)
+
         elif chart_type == 'graph':
             if not all([x_axis, y_axis]):
                 return False
             # Check if we can create meaningful nodes and edges
-            return all(
-                x_axis in row and y_axis in row and
-                row[x_axis] is not None and row[y_axis] is not None
-                for row in preview_data
-            )
+            return all(x_axis in row and y_axis in row
+                       and row[x_axis] is not None and row[y_axis] is not None
+                       for row in preview_data)
 
         return True
     except Exception as e:
@@ -791,13 +900,15 @@ def generate_visualization_config(
 
         # Strict validation of required fields
         if not all([chart_type, title]):
-            logger.error(f"Missing required fields in visualization config: {args}")
+            logger.error(
+                f"Missing required fields in visualization config: {args}")
             return None
 
         # Chart types that don't need both axes
         AXISLESS_CHARTS = ['pie', 'treemap', 'sunburst', 'gauge', 'funnel']
         SPECIAL_CHARTS = ['radar']  # Charts with special handling
-        if chart_type not in AXISLESS_CHARTS + SPECIAL_CHARTS and not all([x_axis, y_axis]):
+        if chart_type not in AXISLESS_CHARTS + SPECIAL_CHARTS and not all(
+            [x_axis, y_axis]):
             logger.error(f"Missing axis fields for {chart_type} chart: {args}")
             return None
 
@@ -827,21 +938,32 @@ def generate_visualization_config(
             tree_data = []
             for parent, children in value_map.items():
                 parent_node = {
-                    'name': parent,
-                    'value': sum(children.values()),
-                    'children': [{'name': child, 'value': value} 
-                               for child, value in children.items()]
+                    'name':
+                    parent,
+                    'value':
+                    sum(children.values()),
+                    'children': [{
+                        'name': child,
+                        'value': value
+                    } for child, value in children.items()]
                 }
                 tree_data.append(parent_node)
 
             if chart_type == 'treemap':
                 return {
-                    'title': {'text': title},
-                    'tooltip': {'formatter': '{b}: {c} records'},
+                    'title': {
+                        'text': title
+                    },
+                    'tooltip': {
+                        'formatter': '{b}: {c} records'
+                    },
                     'series': [{
-                        'type': 'treemap',
-                        'data': tree_data,
-                        'leafDepth': 1,
+                        'type':
+                        'treemap',
+                        'data':
+                        tree_data,
+                        'leafDepth':
+                        1,
                         'levels': [{
                             'itemStyle': {
                                 'borderColor': '#fff',
@@ -849,27 +971,45 @@ def generate_visualization_config(
                                 'gapWidth': 2
                             }
                         }],
-                        'label': {'show': True, 'formatter': '{b}: {c}'}
+                        'label': {
+                            'show': True,
+                            'formatter': '{b}: {c}'
+                        }
                     }]
                 }
             else:  # sunburst
                 return {
-                    'title': {'text': title},
-                    'tooltip': {'trigger': 'item'},
+                    'title': {
+                        'text': title
+                    },
+                    'tooltip': {
+                        'trigger': 'item'
+                    },
                     'series': [{
-                        'type': 'sunburst',
-                        'data': tree_data,
+                        'type':
+                        'sunburst',
+                        'data':
+                        tree_data,
                         'radius': ['20%', '90%'],
-                        'label': {'rotate': 'radial'},
+                        'label': {
+                            'rotate': 'radial'
+                        },
                         'levels': [{}, {
                             'r0': '20%',
                             'r': '55%',
-                            'itemStyle': {'borderWidth': 2},
-                            'label': {'rotate': 'tangential'}
+                            'itemStyle': {
+                                'borderWidth': 2
+                            },
+                            'label': {
+                                'rotate': 'tangential'
+                            }
                         }, {
                             'r0': '55%',
                             'r': '90%',
-                            'label': {'position': 'outside', 'padding': 3}
+                            'label': {
+                                'position': 'outside',
+                                'padding': 3
+                            }
                         }]
                     }]
                 }
@@ -882,7 +1022,9 @@ def generate_visualization_config(
             # Calculate value ranges for numeric dimensions
             ranges = {}
             for dim in dimensions:
-                values = [row[dim] for row in preview_data if row[dim] is not None]
+                values = [
+                    row[dim] for row in preview_data if row[dim] is not None
+                ]
                 if all(isinstance(v, (int, float)) for v in values):
                     ranges[dim] = (min(values), max(values))
 
@@ -898,8 +1040,13 @@ def generate_visualization_config(
                     })
                 else:
                     axis.update({
-                        'type': 'category',
-                        'data': list(set(str(row[dim]) for row in preview_data if row[dim] is not None))
+                        'type':
+                        'category',
+                        'data':
+                        list(
+                            set(
+                                str(row[dim]) for row in preview_data
+                                if row[dim] is not None))
                     })
                 parallel_axis.append(axis)
 
@@ -913,7 +1060,8 @@ def generate_visualization_config(
                         # Normalize numeric values
                         min_val, max_val = ranges[dim]
                         if max_val != min_val:
-                            normalized = (float(value) - min_val) / (max_val - min_val)
+                            normalized = (float(value) - min_val) / (max_val -
+                                                                     min_val)
                             point.append(normalized)
                         else:
                             point.append(0)
@@ -923,11 +1071,16 @@ def generate_visualization_config(
                     normalized_data.append(point)
 
             return {
-                'title': {'text': title},
-                'parallelAxis': parallel_axis,
+                'title': {
+                    'text': title
+                },
+                'parallelAxis':
+                parallel_axis,
                 'series': [{
                     'type': 'parallel',
-                    'lineStyle': {'width': 2},
+                    'lineStyle': {
+                        'width': 2
+                    },
                     'data': normalized_data,
                     'smooth': True
                 }]
@@ -944,7 +1097,9 @@ def generate_visualization_config(
 
             # Calculate percentages and sort by value
             funnel_data = []
-            for k, v in sorted(value_counts.items(), key=lambda x: x[1], reverse=True):
+            for k, v in sorted(value_counts.items(),
+                               key=lambda x: x[1],
+                               reverse=True):
                 percentage = (v / total) * 100
                 funnel_data.append({
                     'value': v,
@@ -953,7 +1108,9 @@ def generate_visualization_config(
                 })
 
             return {
-                'title': {'text': title},
+                'title': {
+                    'text': title
+                },
                 'tooltip': {
                     'trigger': 'item',
                     'formatter': '{b}: {c} ({d}%)'
@@ -967,7 +1124,9 @@ def generate_visualization_config(
                         'formatter': '{b}'
                     },
                     'emphasis': {
-                        'label': {'fontSize': 20}
+                        'label': {
+                            'fontSize': 20
+                        }
                     },
                     'sort': 'descending',
                     'gap': 2,
@@ -979,8 +1138,10 @@ def generate_visualization_config(
         # Enhanced gauge chart
         elif chart_type == 'gauge':
             try:
-                values = [float(row[x_axis]) for row in preview_data 
-                         if x_axis in row and row[x_axis] is not None]
+                values = [
+                    float(row[x_axis]) for row in preview_data
+                    if x_axis in row and row[x_axis] is not None
+                ]
                 if not values:
                     return None
 
@@ -992,36 +1153,66 @@ def generate_visualization_config(
                 range_size = (max_val - min_val) / 3
                 ranges = [
                     [min_val, min_val + range_size, '#67e0e3'],  # Good
-                    [min_val + range_size, min_val + 2*range_size, '#37a2da'],  # Warning
-                    [min_val + 2*range_size, max_val, '#fd666d']  # Critical
+                    [
+                        min_val + range_size, min_val + 2 * range_size,
+                        '#37a2da'
+                    ],  # Warning
+                    [min_val + 2 * range_size, max_val, '#fd666d']  # Critical
                 ]
 
                 return {
-                    'title': {'text': title},
-                    'tooltip': {'formatter': '{b}: {c}'},
+                    'title': {
+                        'text': title
+                    },
+                    'tooltip': {
+                        'formatter': '{b}: {c}'
+                    },
                     'series': [{
                         'type': 'gauge',
                         'min': min_val,
                         'max': max_val,
                         'axisLine': {
                             'lineStyle': {
-                                'width': 30,
-                                'color': [
-                                    [(r[1] - min_val) / (max_val - min_val), r[2]]
-                                    for r in ranges
-                                ]
+                                'width':
+                                30,
+                                'color':
+                                [[(r[1] - min_val) / (max_val - min_val), r[2]]
+                                 for r in ranges]
                             }
                         },
-                        'pointer': {'itemStyle': {'color': 'auto'}},
-                        'axisTick': {'distance': -30, 'length': 8, 'lineStyle': {'color': '#fff'}},
-                        'splitLine': {'distance': -30, 'length': 30, 'lineStyle': {'color': '#fff'}},
-                        'axisLabel': {'color': '#fff', 'distance': -40, 'fontSize': 12},
+                        'pointer': {
+                            'itemStyle': {
+                                'color': 'auto'
+                            }
+                        },
+                        'axisTick': {
+                            'distance': -30,
+                            'length': 8,
+                            'lineStyle': {
+                                'color': '#fff'
+                            }
+                        },
+                        'splitLine': {
+                            'distance': -30,
+                            'length': 30,
+                            'lineStyle': {
+                                'color': '#fff'
+                            }
+                        },
+                        'axisLabel': {
+                            'color': '#fff',
+                            'distance': -40,
+                            'fontSize': 12
+                        },
                         'detail': {
                             'valueAnimation': True,
                             'formatter': '{value}',
                             'color': '#fff'
                         },
-                        'data': [{'value': value, 'name': x_axis}]
+                        'data': [{
+                            'value': value,
+                            'name': x_axis
+                        }]
                     }]
                 }
             except Exception as e:
@@ -1036,7 +1227,9 @@ def generate_visualization_config(
                 volumes = []  # For volume bars if available
 
                 for row in preview_data:
-                    if all(row.get(f) is not None for f in [x_axis, 'open', 'close', 'high', 'low']):
+                    if all(
+                            row.get(f) is not None
+                            for f in [x_axis, 'open', 'close', 'high', 'low']):
                         categories.append(row[x_axis])
                         point = [
                             float(row['open']),
@@ -1071,43 +1264,84 @@ def generate_visualization_config(
                         'xAxisIndex': 1,
                         'yAxisIndex': 1,
                         'data': volumes,
-                        'itemStyle': {'color': '#37a2da'}
+                        'itemStyle': {
+                            'color': '#37a2da'
+                        }
                     })
 
                 config = {
-                    'title': {'text': title},
+                    'title': {
+                        'text': title
+                    },
                     'tooltip': {
                         'trigger': 'axis',
-                        'axisPointer': {'type': 'cross'}
+                        'axisPointer': {
+                            'type': 'cross'
+                        }
                     },
-                    'legend': {'data': ['Price', 'Volume']},
-                    'grid': [
-                        {'left': '10%', 'right': '8%', 'height': '50%'},
-                        {'left': '10%', 'right': '8%', 'top': '65%', 'height': '25%'}
-                    ],
+                    'legend': {
+                        'data': ['Price', 'Volume']
+                    },
+                    'grid': [{
+                        'left': '10%',
+                        'right': '8%',
+                        'height': '50%'
+                    }, {
+                        'left': '10%',
+                        'right': '8%',
+                        'top': '65%',
+                        'height': '25%'
+                    }],
                     'xAxis': [{
                         'data': categories,
-                        'axisLine': {'lineStyle': {'color': '#fff'}},
-                        'axisLabel': {'color': '#fff'}
+                        'axisLine': {
+                            'lineStyle': {
+                                'color': '#fff'
+                            }
+                        },
+                        'axisLabel': {
+                            'color': '#fff'
+                        }
                     }, {
                         'data': categories,
                         'gridIndex': 1,
-                        'axisLine': {'lineStyle': {'color': '#fff'}},
-                        'axisLabel': {'color': '#fff'}
+                        'axisLine': {
+                            'lineStyle': {
+                                'color': '#fff'
+                            }
+                        },
+                        'axisLabel': {
+                            'color': '#fff'
+                        }
                     }],
                     'yAxis': [{
                         'scale': True,
-                        'splitLine': {'show': False},
-                        'axisLine': {'lineStyle': {'color': '#fff'}},
-                        'axisLabel': {'color': '#fff'}
+                        'splitLine': {
+                            'show': False
+                        },
+                        'axisLine': {
+                            'lineStyle': {
+                                'color': '#fff'
+                            }
+                        },
+                        'axisLabel': {
+                            'color': '#fff'
+                        }
                     }, {
                         'scale': True,
                         'gridIndex': 1,
                         'splitNumber': 2,
-                        'axisLine': {'lineStyle': {'color': '#fff'}},
-                        'axisLabel': {'color': '#fff'}
+                        'axisLine': {
+                            'lineStyle': {
+                                'color': '#fff'
+                            }
+                        },
+                        'axisLabel': {
+                            'color': '#fff'
+                        }
                     }],
-                    'series': series
+                    'series':
+                    series
                 }
 
                 return config
@@ -1119,7 +1353,7 @@ def generate_visualization_config(
         # Enhanced graph chart
         elif chart_type == 'radar':
             return generate_radar_config(data, x_axis, y_axis, title)
-            
+
         elif chart_type == 'graph':
             try:
                 nodes = []
@@ -1139,7 +1373,8 @@ def generate_visualization_config(
                     node_map[node] = len(nodes)
                     nodes.append({
                         'name': node,
-                        'symbolSize': min(50, 10 + weight * 5),  # Scale node size
+                        'symbolSize': min(50,
+                                          10 + weight * 5),  # Scale node size
                         'value': weight
                     })
 
@@ -1163,7 +1398,9 @@ def generate_visualization_config(
                     })
 
                 return {
-                    'title': {'text': title},
+                    'title': {
+                        'text': title
+                    },
                     'tooltip': {
                         'trigger': 'item',
                         'formatter': '{b}: {c}'
@@ -1215,8 +1452,14 @@ def generate_visualization_config(
         elif chart_type == 'themeRiver':
             try:
                 # Get the continuous axis values (e.g., income)
-                x_values = [float(row[x_axis]) for row in preview_data if x_axis in row and row[x_axis] is not None]
-                y_values = [float(row[y_axis]) for row in preview_data if y_axis in row and row[y_axis] is not None]
+                x_values = [
+                    float(row[x_axis]) for row in preview_data
+                    if x_axis in row and row[x_axis] is not None
+                ]
+                y_values = [
+                    float(row[y_axis]) for row in preview_data
+                    if y_axis in row and row[y_axis] is not None
+                ]
 
                 if not x_values or not y_values:
                     logger.error("No valid data points for ThemeRiver")
@@ -1226,19 +1469,19 @@ def generate_visualization_config(
                 min_income = min(x_values)
                 max_income = max(x_values)
                 bracket_size = (max_income - min_income) / 5  # 5 brackets
-                brackets = [
-                    (min_income + i * bracket_size, min_income + (i + 1) * bracket_size)
-                    for i in range(5)
-                ]
+                brackets = [(min_income + i * bracket_size,
+                             min_income + (i + 1) * bracket_size)
+                            for i in range(5)]
 
                 #Create debt ratio categories
                 min_ratio = min(y_values)
                 max_ratio = max(y_values)
                 ratio_range = max_ratio - min_ratio
                 ratio_categories = [
-                    ('Low', min_ratio, min_ratio + ratio_range/3),
-                    ('Medium', min_ratio + ratio_range/3, min_ratio + 2*ratio_range/3),
-                    ('High', min_ratio + 2*ratio_range/3, max_ratio)
+                    ('Low', min_ratio, min_ratio + ratio_range / 3),
+                    ('Medium', min_ratio + ratio_range / 3,
+                     min_ratio + 2 * ratio_range / 3),
+                    ('High', min_ratio + 2 * ratio_range / 3, max_ratio)
                 ]
 
                 # Transform data into ThemeRiver format
@@ -1251,52 +1494,95 @@ def generate_visualization_config(
                     for category_name, cat_start, cat_end in ratio_categories:
                         count = sum(
                             1 for row in preview_data
-                            if x_axis in row and y_axis in row
-                            and bracket_start <= float(row[x_axis]) < bracket_end
-                            and cat_start <= float(row[y_axis]) < cat_end
-                        )
+                            if x_axis in row and y_axis in row and
+                            bracket_start <= float(row[x_axis]) < bracket_end
+                            and cat_start <= float(row[y_axis]) < cat_end)
                         if count > 0:  # Only add non-zero data points
-                            theme_data.append([bracket_label, count, category_name])
+                            theme_data.append(
+                                [bracket_label, count, category_name])
 
                 if not theme_data:
                     logger.error("No valid theme data generated")
                     return None
 
                 # Sort data by bracket label
-                theme_data.sort(key=lambda x: float(x[0].split('-')[0].replace('$', '').replace('k', '')))
+                theme_data.sort(key=lambda x: float(x[0].split('-')[0].replace(
+                    '$', '').replace('k', '')))
 
                 return {
-                    'title': {'text': title},
+                    'title': {
+                        'text': title
+                    },
                     'tooltip': {
                         'trigger': 'axis',
-                        'axisPointer': {'type': 'line', 'lineStyle': {'color': 'rgba(255,255,255,0.2)', 'width': 1, 'type': 'solid'}}
+                        'axisPointer': {
+                            'type': 'line',
+                            'lineStyle': {
+                                'color': 'rgba(255,255,255,0.2)',
+                                'width': 1,
+                                'type': 'solid'
+                            }
+                        }
                     },
                     'legend': {
                         'data': [cat[0] for cat in ratio_categories],
-                        'textStyle': {'color': '#fff'}
+                        'textStyle': {
+                            'color': '#fff'
+                        }
                     },
                     'singleAxis': {
                         'top': 50,
                         'bottom': 50,
                         'axisTick': {},
-                        'axisLabel': {'color': '#fff'},
+                        'axisLabel': {
+                            'color': '#fff'
+                        },
                         'type': 'category',
                         'data': sorted(set(x[0] for x in theme_data)),
-                        'splitLine': {'show': True, 'lineStyle': {'color': 'rgba(255,255,255,0.2)'}}
+                        'splitLine': {
+                            'show': True,
+                            'lineStyle': {
+                                'color': 'rgba(255,255,255,0.2)'
+                            }
+                        }
                     },
                     'series': [{
                         'type': 'themeRiver',
-                        'emphasis': {'itemStyle': {'shadowBlur': 20, 'shadowColor': 'rgba(0, 0, 0, 0.8)'}},
+                        'emphasis': {
+                            'itemStyle': {
+                                'shadowBlur': 20,
+                                'shadowColor': 'rgba(0, 0, 0, 0.8)'
+                            }
+                        },
                         'data': theme_data,
-                        'label': {'show': True},
+                        'label': {
+                            'show': True
+                        },
                         'itemStyle': {
                             'color': {
-                                'type': 'linear',
-                                'x': 0, 'y': 0, 'x2': 0, 'y2': 1,
+                                'type':
+                                'linear',
+                                'x':
+                                0,
+                                'y':
+                                0,
+                                'x2':
+                                0,
+                                'y2':
+                                1,
                                 'colorStops': [
-                                    {'offset': 0, 'color': '#37a2da'},  # Low
-                                    {'offset': 0.5, 'color': '#67e0e3'},  # Medium
-                                    {'offset': 1, 'color': '#fd666d'}  # High
+                                    {
+                                        'offset': 0,
+                                        'color': '#37a2da'
+                                    },  # Low
+                                    {
+                                        'offset': 0.5,
+                                        'color': '#67e0e3'
+                                    },  # Medium
+                                    {
+                                        'offset': 1,
+                                        'color': '#fd666d'
+                                    }  # High
                                 ]
                             }
                         }
@@ -1310,30 +1596,27 @@ def generate_visualization_config(
         valid_data = []
         if chart_type in ['bar', 'line']:
             valid_data = [
-                (str(row[x_axis]), float(row[y_axis])) 
-                for row in preview_data
-                if x_axis in row and y_axis in row 
-                and row[x_axis] is not None
-                and row[y_axis] is not None 
-                and not (isinstance(row[y_axis], float) and math.isnan(row[y_axis]))
+                (str(row[x_axis]), float(row[y_axis])) for row in preview_data
+                if x_axis in row and y_axis in row and row[x_axis] is not None
+                and row[y_axis] is not None and not (
+                    isinstance(row[y_axis], float) and math.isnan(row[y_axis]))
             ]
         elif chart_type == 'scatter':
             valid_data = [
                 [float(row[x_axis]), float(row[y_axis])]
                 for row in preview_data
-                if x_axis in row and y_axis in row 
-                and row[x_axis] is not None
-                and row[y_axis] is not None 
-                and not (isinstance(row[x_axis], float) and math.isnan(row[x_axis]))
-                and not (isinstance(row[y_axis], float) and math.isnan(row[y_axis]))
+                if x_axis in row and y_axis in row and row[x_axis] is not None
+                and row[y_axis] is not None and not (
+                    isinstance(row[x_axis], float) and math.isnan(row[x_axis]))
+                and not (
+                    isinstance(row[y_axis], float) and math.isnan(row[y_axis]))
             ]
         elif chart_type == 'boxplot':
             # For boxplot, we need to calculate the statistical values
             valid_values = [
-                float(row[y_axis]) 
-                for row in preview_data
-                if y_axis in row and row[y_axis] is not None 
-                and not (isinstance(row[y_axis], float) and math.isnan(row[y_axis]))
+                float(row[y_axis]) for row in preview_data
+                if y_axis in row and row[y_axis] is not None and not (
+                    isinstance(row[y_axis], float) and math.isnan(row[y_axis]))
             ]
             if valid_values:
                 sorted_values = sorted(valid_values)
@@ -1358,11 +1641,9 @@ def generate_visualization_config(
         elif chart_type == 'heatmap':
             # For heatmap, create a correlation matrix or frequency matrix
             x_values = list(
-                set(str(row[x_axis]) for row in preview_data if x_axis in row)
-            )
+                set(str(row[x_axis]) for row in preview_data if x_axis in row))
             y_values = list(
-                set(str(row[y_axis]) for row in preview_data if y_axis in row)
-            )
+                set(str(row[y_axis]) for row in preview_data if y_axis in row))
 
             # Create frequency matrix
             matrix = []
@@ -1371,7 +1652,7 @@ def generate_visualization_config(
                     count = sum(1 for row in preview_data
                                 if str(row.get(x_axis)) == x_val
                                 and str(row.get(y_axis)) == y_val)
-        }
+
         valid_data = matrix
 
         # If no valid data points, return None
@@ -1413,7 +1694,9 @@ def generate_visualization_config(
         if chart_type in ['bar', 'line', 'scatter', 'boxplot']:
             config.update({
                 'xAxis': {
-                    'type': 'category' if chart_type in ['bar', 'line', 'boxplot'] else 'value',
+                    'type':
+                    'category'
+                    if chart_type in ['bar', 'line', 'boxplot'] else 'value',
                     'axisLabel': {
                         'color': '#fff'
                     },
@@ -1648,8 +1931,7 @@ def validate_data_quality(data: Dict[str, Any]) -> str:
             null_count = sum(1 for row in preview_data
                              if row.get(col) is None or row.get(col) == '')
         if null_count > 0:
-            issues.append(
-                f"Column '{col}' has {null_count} missing values")
+            issues.append(f"Column '{col}' has {null_count} missing values")
 
         # Check for NaN values in numeric columns
         for col, stat in stats.items():
@@ -1722,137 +2004,184 @@ def determine_best_chart_type(data: Dict[str, Any], columns: List[str]) -> str:
 def get_visualization_configs(data: Dict[str, Any]) -> Dict[str, Any]:
     """Get visualization configurations based on data analysis."""
     logger.debug("Getting visualization configurations")
-    
+
     try:
         # First check if we have valid data
         if not isinstance(data, dict):
             return {"success": False, "error": "Invalid data format"}
-            
+
         if not data.get('success', False):
             # If data already has an error, propagate it
             return data
-            
+
         # Prepare data context
         data_context = prepare_data_context(data)
         if not data_context.get('success', False):
             # If data context preparation failed, propagate the error
             return data_context
-            
+
         # Extract relevant information for visualization
         numeric_cols = data_context.get('numeric_columns', [])
         categorical_cols = data_context.get('categorical_columns', [])
-        
+
         if not numeric_cols and not categorical_cols:
             return {
-                "success": False,
-                "error": "No numeric or categorical columns available for visualization"
+                "success":
+                False,
+                "error":
+                "No numeric or categorical columns available for visualization"
             }
-            
+
         # Create visualization configurations
         configs = []
-        
+
         # Add numeric visualizations
         if numeric_cols:
             # Single numeric column - histogram
             if len(numeric_cols) == 1:
                 configs.append({
-                    "chart_type": "bar",
-                    "title": f"Distribution of {numeric_cols[0]}",
-                    "x_axis": numeric_cols[0],
-                    "explanation": f"Shows the distribution of values in {numeric_cols[0]}"
+                    "chart_type":
+                    "bar",
+                    "title":
+                    f"Distribution of {numeric_cols[0]}",
+                    "x_axis":
+                    numeric_cols[0],
+                    "explanation":
+                    f"Shows the distribution of values in {numeric_cols[0]}"
                 })
-            
+
             # Multiple numeric columns - scatter plot and correlation heatmap
             if len(numeric_cols) >= 2:
-                configs.extend([
-                    {
-                        "chart_type": "scatter",
-                        "title": f"{numeric_cols[0]} vs {numeric_cols[1]}",
-                        "x_axis": numeric_cols[0],
-                        "y_axis": numeric_cols[1],
-                        "explanation": f"Shows the relationship between {numeric_cols[0]} and {numeric_cols[1]}"
-                    },
-                    {
-                        "chart_type": "heatmap",
-                        "title": "Correlation Matrix",
-                        "explanation": "Shows correlations between numeric variables"
-                    }
-                ])
-        
+                configs.extend([{
+                    "chart_type":
+                    "scatter",
+                    "title":
+                    f"{numeric_cols[0]} vs {numeric_cols[1]}",
+                    "x_axis":
+                    numeric_cols[0],
+                    "y_axis":
+                    numeric_cols[1],
+                    "explanation":
+                    f"Shows the relationship between {numeric_cols[0]} and {numeric_cols[1]}"
+                }, {
+                    "chart_type":
+                    "heatmap",
+                    "title":
+                    "Correlation Matrix",
+                    "explanation":
+                    "Shows correlations between numeric variables"
+                }])
+
         # Add categorical visualizations
         if categorical_cols:
-            configs.extend([
-                {
-                    "chart_type": "pie",
-                    "title": f"Distribution of {categorical_cols[0]}",
-                    "x_axis": categorical_cols[0],
-                    "explanation": f"Shows the distribution of categories in {categorical_cols[0]}"
-                }
-            ])
-            
+            configs.extend([{
+                "chart_type":
+                "pie",
+                "title":
+                f"Distribution of {categorical_cols[0]}",
+                "x_axis":
+                categorical_cols[0],
+                "explanation":
+                f"Shows the distribution of categories in {categorical_cols[0]}"
+            }])
+
             # If we have multiple categorical columns, add a treemap
             if len(categorical_cols) >= 2:
                 configs.append({
-                    "chart_type": "treemap",
-                    "title": f"Hierarchical View of {categorical_cols[0]} and {categorical_cols[1]}",
-                    "x_axis": categorical_cols[0],
-                    "y_axis": categorical_cols[1],
-                    "explanation": f"Shows hierarchical relationship between {categorical_cols[0]} and {categorical_cols[1]}"
+                    "chart_type":
+                    "treemap",
+                    "title":
+                    f"Hierarchical View of {categorical_cols[0]} and {categorical_cols[1]}",
+                    "x_axis":
+                    categorical_cols[0],
+                    "y_axis":
+                    categorical_cols[1],
+                    "explanation":
+                    f"Shows hierarchical relationship between {categorical_cols[0]} and {categorical_cols[1]}"
                 })
-        
-        return {
-            "success": True,
-            "configs": configs
-        }
-        
+
+        return {"success": True, "configs": configs}
+
     except Exception as e:
         logger.error(f"Error generating visualization configs: {str(e)}")
         return {
             "success": False,
-            "error": f"Failed to generate visualization configurations: {str(e)}"
+            "error":
+            f"Failed to generate visualization configurations: {str(e)}"
         }
 
 
-def generate_radar_config(data: Dict[str, Any], x_axis: str, y_axis: str, title: str) -> Dict[str, Any]:
+def generate_radar_config(data: Dict[str, Any], x_axis: str, y_axis: str,
+                          title: str) -> Dict[str, Any]:
     """Generate radar chart configuration."""
     try:
         # Get unique categories from x_axis
-        categories = list(set(str(row.get(x_axis, '')) 
-                            for row in data.get('preview', [])
-                            if row.get(x_axis) is not None))
-        
+        categories = list(
+            set(
+                str(row.get(x_axis, '')) for row in data.get('preview', [])
+                if row.get(x_axis) is not None))
+
         # Calculate average values for each category
         values = []
         for category in categories:
             category_values = [
-                float(row.get(y_axis, 0))
-                for row in data.get('preview', [])
-                if str(row.get(x_axis)) == category 
+                float(row.get(y_axis, 0)) for row in data.get('preview', [])
+                if str(row.get(x_axis)) == category
                 and row.get(y_axis) is not None
             ]
             if category_values:
                 values.append(sum(category_values) / len(category_values))
             else:
                 values.append(0)
-        
+
         return {
-            'title': {'text': title},
-            'tooltip': {'trigger': 'item'},
-            'legend': {'textStyle': {'color': '#fff'}},
+            'title': {
+                'text': title
+            },
+            'tooltip': {
+                'trigger': 'item'
+            },
+            'legend': {
+                'textStyle': {
+                    'color': '#fff'
+                }
+            },
             'radar': {
-                'indicator': [{'name': cat, 'max': max(values) * 1.2} for cat in categories],
-                'axisName': {'color': '#fff'},
-                'axisLine': {'lineStyle': {'color': 'rgba(255,255,255,0.2)'}},
-                'splitLine': {'lineStyle': {'color': 'rgba(255,255,255,0.2)'}},
-                'splitArea': {'areaStyle': {'color': 'rgba(255,255,255,0.1)'}}
+                'indicator': [{
+                    'name': cat,
+                    'max': max(values) * 1.2
+                } for cat in categories],
+                'axisName': {
+                    'color': '#fff'
+                },
+                'axisLine': {
+                    'lineStyle': {
+                        'color': 'rgba(255,255,255,0.2)'
+                    }
+                },
+                'splitLine': {
+                    'lineStyle': {
+                        'color': 'rgba(255,255,255,0.2)'
+                    }
+                },
+                'splitArea': {
+                    'areaStyle': {
+                        'color': 'rgba(255,255,255,0.1)'
+                    }
+                }
             },
             'series': [{
-                'type': 'radar',
+                'type':
+                'radar',
                 'data': [{
                     'value': values,
                     'name': y_axis,
-                    'itemStyle': {'color': '#37a2da'},
-                    'areaStyle': {'color': 'rgba(55,162,218,0.6)'}
+                    'itemStyle': {
+                        'color': '#37a2da'
+                    },
+                    'areaStyle': {
+                        'color': 'rgba(55,162,218,0.6)'
+                    }
                 }]
             }]
         }

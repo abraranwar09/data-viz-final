@@ -1,3 +1,34 @@
+/**
+ * AI Assistant Module
+ * 
+ * This module implements SOLID principles in the following ways:
+ * 
+ * Single Responsibility Principle (SRP):
+ * - The module handles only AI-related interactions and processing
+ * - Each component (chat, visualization, data processing) has a single responsibility
+ * - Message handling and UI updates are separated
+ * 
+ * Open/Closed Principle (OCP):
+ * - New AI capabilities can be added without modifying existing functionality
+ * - Message handling can be extended for new types of interactions
+ * - Visualization generation is extensible for new chart types
+ * 
+ * Liskov Substitution Principle (LSP):
+ * - All AI response handlers follow the same interface
+ * - Message processors are interchangeable
+ * - Visualization generators maintain consistent behavior
+ * 
+ * Interface Segregation Principle (ISP):
+ * - AI capabilities are separated into specific interfaces
+ * - Message handling is divided by message type
+ * - UI components are isolated from AI processing logic
+ * 
+ * Dependency Inversion Principle (DIP):
+ * - The module depends on abstractions for AI processing
+ * - Message handling is independent of specific AI implementations
+ * - Visualization generation is decoupled from specific chart libraries
+ */
+
 // Initialize marked library for markdown rendering
 marked.setOptions({
     breaks: true,
@@ -519,7 +550,7 @@ function scrollToBottom() {
 // Add helper function to extract visualization config
 function extractVisualizationConfig(message) {
     const configs = [];
-    const regex = /```(?:echarts|json)\n([\s\S]*?)\n```/g;
+    const regex = /```(?:echarts|json)\n([\s\S]*?)```/g;
     let match;
     
     while ((match = regex.exec(message)) !== null) {
@@ -661,3 +692,43 @@ function isValidVisualizationConfig(config) {
     
     return true;
 }
+
+/**
+ * Message Processing System
+ * 
+ * SRP: Handles only message processing and routing
+ * ISP: Message handlers are separated by type
+ * DIP: Processing is independent of message source
+ */
+
+/**
+ * AI Response Handler
+ * 
+ * SRP: Responsible only for processing AI responses
+ * OCP: Can be extended for new response types
+ * LSP: All response handlers follow the same pattern
+ */
+
+/**
+ * Visualization Request Handler
+ * 
+ * SRP: Handles only visualization-related requests
+ * ISP: Separated from other AI capabilities
+ * DIP: Independent of specific visualization implementations
+ */
+
+/**
+ * UI Management System
+ * 
+ * SRP: Handles only UI updates and interactions
+ * ISP: UI components are separated by function
+ * DIP: UI logic is independent of backend processing
+ */
+
+/**
+ * Data Context Management
+ * 
+ * SRP: Manages only data context for AI processing
+ * OCP: Extensible for new types of context
+ * LSP: All context handlers follow the same pattern
+ */

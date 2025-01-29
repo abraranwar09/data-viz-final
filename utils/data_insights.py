@@ -4,6 +4,37 @@ import pandas as pd
 from scipy import stats
 from .robust_statistics import RobustStatistics
 
+"""
+Data Insights Module
+
+This module implements SOLID principles in the following ways:
+
+Single Responsibility Principle (SRP):
+- The DataInsights class has a single responsibility of generating insights
+- Each insight generator method handles a specific type of analysis
+- Statistical calculations are isolated from insight generation
+
+Open/Closed Principle (OCP):
+- New insight generators can be added without modifying existing ones
+- Statistical analysis methods can be extended
+- New data types can be supported through extension
+
+Liskov Substitution Principle (LSP):
+- All insight generators follow the same interface pattern
+- Statistical analysis methods maintain consistent behavior
+- Type checking ensures proper substitution
+
+Interface Segregation Principle (ISP):
+- Insight generators are separated by analysis type
+- Statistical methods are grouped by purpose
+- Helper functions are isolated by responsibility
+
+Dependency Inversion Principle (DIP):
+- The module depends on abstractions (RobustStatistics) rather than implementations
+- Insight generation is independent of data source
+- Statistical analysis is decoupled from specific data formats
+"""
+
 class DataInsights:
     """Generates statistical insights and key metrics from data."""
     

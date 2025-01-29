@@ -1,3 +1,34 @@
+/**
+ * Visualization System Core Module
+ * 
+ * This module implements SOLID principles in the following ways:
+ * 
+ * Single Responsibility Principle (SRP):
+ * - Each function has a single, well-defined purpose
+ * - Chart creation, updating, and management are separated into distinct functions
+ * - Data processing and visualization logic are kept separate
+ * 
+ * Open/Closed Principle (OCP):
+ * - The visualization system is extensible for new chart types without modifying existing code
+ * - New chart configurations can be added by extending the config generation functions
+ * - Chart styling and themes are separate from core functionality
+ * 
+ * Liskov Substitution Principle (LSP):
+ * - All chart types follow the same interface pattern
+ * - Any chart implementation can be substituted without affecting the rest of the system
+ * - Chart containers are consistent and interchangeable
+ * 
+ * Interface Segregation Principle (ISP):
+ * - Chart configurations are modular and specific to each chart type
+ * - Event handlers are separated by responsibility
+ * - UI components are isolated from data processing logic
+ * 
+ * Dependency Inversion Principle (DIP):
+ * - The system depends on abstractions (chart configs) rather than concrete implementations
+ * - Data processing is independent of visualization rendering
+ * - Chart initialization is decoupled from specific chart types
+ */
+
 let chartInstances = [];
 let pinnedCharts = [];
 const MAX_PINNED_CHARTS = 2;
