@@ -1401,7 +1401,7 @@ def generate_visualization_config(
         elif chart_type == 'heatmap':
             # For heatmap, create a correlation matrix or frequency matrix
             x_values = list(
-                set(str(row[x_axis]) for row in preview_data if x_axis in row))
+                set(str(row[x_axis]) for row in preview_data if x_axis in row)
             )
             y_values = list(
                 set(str(row[y_axis]) for row in preview_data if y_axis in row))
