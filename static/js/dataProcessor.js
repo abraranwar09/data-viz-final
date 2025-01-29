@@ -1,47 +1,159 @@
 function processData(data) {
-    if (!data || !data.column_stats) {
-        console.error('Invalid data format');
-        return null;
-    }
-
     try {
-        // Get column types from cleaned data
-        const categoricalColumns = Object.entries(data.column_stats)
-            .filter(([_, stats]) => stats.type === 'categorical')
-            .map(([col, _]) => col);
-
-        const numericColumns = Object.entries(data.column_stats)
-            .filter(([_, stats]) => stats.type === 'numeric')
-            .map(([col, _]) => col);
-
+        console.log('Processing data input:', data);
         let processedData = {};
 
-        // Handle categorical data
-        if (categoricalColumns.length > 0) {
-            const catData = prepareCategoricalData(data, categoricalColumns);
-            if (catData) {
-                processedData.categorical = catData;
-            }
+        // Ensure we have valid data
+        if (!data || !data.preview || !Array.isArray(data.preview) || data.preview.length === 0) {
+            console.warn('Invalid or empty data provided to processData');
+            return null;
         }
 
-        // Handle numeric data
-        if (numericColumns.length > 0) {
-            const numericData = {
-                histogram: prepareHistogramData(data, numericColumns[0]),
-                scatter: prepareScatterData(data, numericColumns[0], numericColumns[1]),
-                boxplot: prepareBoxplotData(data, numericColumns),
-                heatmap: prepareHeatmapData(data, numericColumns)
+        // Extract column information
+        const columns = Object.keys(data.preview[0] || {});
+        console.log('Found columns:', columns);
+
+        if (columns.length === 0) {
+            console.warn('No columns found in data');
+            return null;
+        }
+
+        // Calculate frequencies and statistics for all columns
+        const columnStats = {};
+        columns.forEach(column => {
+            console.log(`Processing column: ${column}`);
+            const values = data.preview.map(row => row[column]);
+            console.log(`Values for ${column}:`, values);
+            
+            const validValues = values.filter(v => v != null && v !== '');
+            console.log(`Valid values for ${column}:`, validValues);
+            
+            if (validValues.length === 0) {
+                console.log(`Skipping empty column: ${column}`);
+                return;
+            }
+
+            // Determine column type
+            const isNumeric = validValues.every(v => !isNaN(v) && typeof v !== 'boolean');
+            const uniqueValues = new Set(validValues);
+            const isCategorical = uniqueValues.size <= Math.min(20, validValues.length / 2);
+            
+            console.log(`Column ${column} type:`, isNumeric ? 'numeric' : 'categorical');
+            console.log(`Column ${column} unique values:`, Array.from(uniqueValues));
+
+            // Calculate frequencies
+            const frequencies = {};
+            validValues.forEach(value => {
+                frequencies[value] = (frequencies[value] || 0) + 1;
+            });
+            
+            console.log(`Frequencies for ${column}:`, frequencies);
+
+            columnStats[column] = {
+                type: isNumeric ? 'numeric' : 'categorical',
+                frequencies,
+                uniqueValues: Array.from(uniqueValues),
+                count: validValues.length
             };
 
-            // Only add numeric data if at least one visualization was created
-            if (Object.values(numericData).some(v => v !== null)) {
+            // Add numeric statistics if applicable
+            if (isNumeric) {
+                const numericValues = validValues.map(v => Number(v));
+                const sorted = [...numericValues].sort((a, b) => a - b);
+                columnStats[column] = {
+                    ...columnStats[column],
+                    min: Math.min(...numericValues),
+                    max: Math.max(...numericValues),
+                    mean: numericValues.reduce((a, b) => a + b, 0) / numericValues.length,
+                    median: sorted[Math.floor(sorted.length / 2)],
+                    q1: sorted[Math.floor(sorted.length * 0.25)],
+                    q3: sorted[Math.floor(sorted.length * 0.75)]
+                };
+            }
+        });
+
+        console.log('Column stats:', columnStats);
+
+        // Process categorical data
+        const categoricalColumns = Object.entries(columnStats)
+            .filter(([_, stats]) => stats.type === 'categorical')
+            .map(([col]) => col);
+            
+        console.log('Categorical columns:', categoricalColumns);
+
+        if (categoricalColumns.length > 0) {
+            processedData.categorical = {};
+            categoricalColumns.forEach(col => {
+                console.log(`Processing categorical column: ${col}`);
+                const stats = columnStats[col];
+                console.log(`Stats for ${col}:`, stats);
+                
+                if (stats && stats.frequencies) {
+                    processedData.categorical[col] = {
+                        frequencies: stats.frequencies,
+                        total: stats.count,
+                        unique_values: stats.uniqueValues
+                    };
+                    console.log(`Processed categorical data for ${col}:`, processedData.categorical[col]);
+                } else {
+                    console.warn(`Missing stats or frequencies for column: ${col}`);
+                }
+            });
+        }
+
+        // Process numeric data
+        const numericColumns = Object.entries(columnStats)
+            .filter(([_, stats]) => stats.type === 'numeric')
+            .map(([col]) => col);
+
+        if (numericColumns.length > 0) {
+            const numericData = {};
+            
+            // Prepare histogram data
+            if (numericColumns[0]) {
+                const histogramData = prepareHistogramData(data, numericColumns[0], columnStats);
+                if (histogramData) {
+                    numericData.histogram = histogramData;
+                }
+            }
+            
+            // Prepare scatter data
+            if (numericColumns.length >= 2) {
+                const scatterData = prepareScatterData(data, numericColumns[0], numericColumns[1]);
+                if (scatterData) {
+                    numericData.scatter = scatterData;
+                }
+            }
+            
+            // Prepare boxplot data
+            const boxplotData = prepareBoxplotData(data, numericColumns, columnStats);
+            if (boxplotData) {
+                numericData.boxplot = boxplotData;
+            }
+            
+            // Prepare heatmap data
+            if (numericColumns.length >= 2) {
+                const heatmapData = prepareHeatmapData(data, numericColumns);
+                if (heatmapData) {
+                    numericData.heatmap = heatmapData;
+                }
+            }
+
+            if (Object.keys(numericData).length > 0) {
                 processedData = { ...processedData, ...numericData };
             }
         }
 
+        // Add column statistics
+        processedData.column_stats = columnStats;
+        
+        // Add preview data
+        processedData.preview = data.preview;
+
+        console.log('Final processed data:', processedData);
         return processedData;
     } catch (error) {
-        console.error('Error processing data:', error);
+        console.error('Error in processData:', error);
         return null;
     }
 }
@@ -55,19 +167,22 @@ function validateNumericValues(values) {
     ).map(v => Number(v));
 }
 
-function prepareHistogramData(data, column) {
-    if (!column || !data.preview || !data.preview.length) {
-        return null;
-    }
+function prepareHistogramData(data, column, columnStats) {
+    if (!column || !columnStats[column]) return null;
 
     try {
-        const values = validateNumericValues(data.preview.map(row => row[column]));
-        if (!values.length) return null;
+        const stats = columnStats[column];
+        const values = data.preview
+            .map(row => row[column])
+            .filter(v => v != null && !isNaN(v))
+            .map(Number);
+
+        if (values.length === 0) return null;
 
         // Create histogram bins
         const binCount = Math.min(10, Math.ceil(Math.sqrt(values.length)));
-        const min = Math.min(...values);
-        const max = Math.max(...values);
+        const min = stats.min;
+        const max = stats.max;
         const binWidth = (max - min) / binCount;
         const bins = Array(binCount).fill(0);
 
@@ -119,22 +234,22 @@ function prepareScatterData(data, columnX, columnY) {
     }
 }
 
-function prepareBoxplotData(data, columns) {
+function prepareBoxplotData(data, columns, columnStats) {
     if (!columns || !columns.length) {
         return null;
     }
 
     try {
         return columns
-            .filter(col => data.column_stats[col] && data.column_stats[col].type === 'numeric')
+            .filter(col => columnStats[col] && columnStats[col].type === 'numeric')
             .map(col => ({
                 name: col,
                 stats: {
-                    min: data.column_stats[col].min,
-                    q1: data.column_stats[col].q1 || data.column_stats[col].min,
-                    median: data.column_stats[col].median,
-                    q3: data.column_stats[col].q3 || data.column_stats[col].max,
-                    max: data.column_stats[col].max
+                    min: columnStats[col].min,
+                    q1: columnStats[col].q1 || columnStats[col].min,
+                    median: columnStats[col].median,
+                    q3: columnStats[col].q3 || columnStats[col].max,
+                    max: columnStats[col].max
                 }
             }));
     } catch (error) {
@@ -247,6 +362,57 @@ function prepareCategoricalData(data, columns) {
         return Object.keys(result).length > 0 ? result : null;
     } catch (error) {
         console.error('Error preparing categorical data:', error);
+        return null;
+    }
+}
+
+// Add new function to handle education vs income relationship
+function prepareEducationIncomeData(data, educationColumn, incomeColumn) {
+    if (!data.preview || !data.preview.length) {
+        return null;
+    }
+
+    try {
+        // Group data by education level
+        const educationGroups = {};
+        
+        data.preview.forEach(row => {
+            const education = row[educationColumn];
+            const income = parseFloat(row[incomeColumn]);
+            
+            if (education && !isNaN(income)) {
+                if (!educationGroups[education]) {
+                    educationGroups[education] = [];
+                }
+                educationGroups[education].push(income);
+            }
+        });
+
+        // Calculate statistics for each education level
+        const result = Object.entries(educationGroups).map(([education, incomes]) => {
+            const avg = incomes.reduce((a, b) => a + b, 0) / incomes.length;
+            const sorted = [...incomes].sort((a, b) => a - b);
+            const median = sorted[Math.floor(sorted.length / 2)];
+            
+            return {
+                education,
+                averageIncome: avg,
+                medianIncome: median,
+                count: incomes.length,
+                min: Math.min(...incomes),
+                max: Math.max(...incomes)
+            };
+        });
+
+        return {
+            educationLevels: result.map(r => r.education),
+            averageIncomes: result.map(r => r.averageIncome),
+            medianIncomes: result.map(r => r.medianIncome),
+            counts: result.map(r => r.count),
+            ranges: result.map(r => ({ min: r.min, max: r.max }))
+        };
+    } catch (error) {
+        console.error('Error preparing education vs income data:', error);
         return null;
     }
 }

@@ -36,21 +36,46 @@
 /* Chart Styles */
 .chart-container {
     position: relative;
-    background: rgba(255, 255, 255, 0.05);
+    background: #fff;
     border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
     padding: 1rem;
     min-height: 400px;
-    height: 400px;
-    width: 100%;
     display: flex;
     flex-direction: column;
 }
 
-.chart-container > div {
+.chart-container .chart {
     flex: 1;
     width: 100%;
     height: 100%;
     min-height: 350px;
+}
+
+.chart-container .chart-toolbar {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.5rem;
+    padding: 0.5rem;
+    position: absolute;
+    top: 0.5rem;
+    right: 0.5rem;
+    z-index: 10;
+}
+
+.chart-container .chart-toolbar button {
+    background: rgba(255, 255, 255, 0.9);
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    padding: 0.25rem 0.5rem;
+    font-size: 0.875rem;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.chart-container .chart-toolbar button:hover {
+    background: #f8f9fa;
+    border-color: #adb5bd;
 }
 
 /* Visualization Loading */
@@ -249,10 +274,114 @@
 /* Visualization Grid System */
 .visualization-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
     gap: 1rem;
     padding: 1rem;
     width: 100%;
+    height: 100%;
+    grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+}
+
+.visualization-grid.single-view {
+    grid-template-columns: 1fr;
+}
+
+.chart-container {
+    position: relative;
+    background: #fff;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    padding: 1rem;
+    min-height: 400px;
+    display: flex;
+    flex-direction: column;
+}
+
+.chart-container .chart {
+    flex: 1;
+    width: 100%;
+    height: 100%;
+    min-height: 350px;
+}
+
+.chart-container .chart-toolbar {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.5rem;
+    padding: 0.5rem;
+    position: absolute;
+    top: 0.5rem;
+    right: 0.5rem;
+    z-index: 10;
+}
+
+.chart-container .chart-toolbar button {
+    background: rgba(255, 255, 255, 0.9);
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    padding: 0.25rem 0.5rem;
+    font-size: 0.875rem;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.chart-container .chart-toolbar button:hover {
+    background: #f8f9fa;
+    border-color: #adb5bd;
+}
+
+/* Loading state */
+.viz-loading-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(255, 255, 255, 0.8);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 1000;
+}
+
+/* Error state */
+.error-alert {
+    position: fixed;
+    top: 1rem;
+    right: 1rem;
+    z-index: 1100;
+    max-width: 400px;
+    background: #fff;
+    border-left: 4px solid #dc3545;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    padding: 1rem;
+    border-radius: 4px;
+    animation: slideIn 0.3s ease-out;
+}
+
+@keyframes slideIn {
+    from {
+        transform: translateX(100%);
+        opacity: 0;
+    }
+    to {
+        transform: translateX(0);
+        opacity: 1;
+    }
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+    .visualization-grid {
+        grid-template-columns: 1fr;
+    }
+    
+    .chart-container {
+        min-height: 300px;
+    }
+    
+    .chart-container .chart {
+        min-height: 250px;
+    }
 }
 
 /* Grid size variations based on chart count */
@@ -443,21 +572,6 @@
 /* Make sure the loading indicator is visible */
 .thinking-dots.d-none {
     display: none !important;
-}
-
-/* Visualization loading overlay */
-.viz-loading-overlay {
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: rgba(0, 0, 0, 0.7);
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    z-index: 1000;
-    border-radius: 5px;
 }
 
 /* Make sure the spinner is visible */

@@ -124,12 +124,45 @@ async function updateVisualizations(configs) {
         return;
     }
 
-    // Filter out invalid/empty configurations
+    // Enhanced validation and transformation with more flexible data handling
     configs = configs.filter(config => {
-        if (!config.series || !Array.isArray(config.series)) return false;
-        return config.series.some(series => 
-            series.data && Array.isArray(series.data) && series.data.length > 0
-        );
+        // Validate basic structure
+        if (!config || typeof config !== 'object') return false;
+        
+        // Handle different valid E-charts data formats
+        if (config.dataset && config.dataset.source) return true;
+        if (config.series && Array.isArray(config.series)) {
+            // Transform and validate each series
+            config.series = config.series.map(series => {
+                // Handle different data formats
+                if (series.data === undefined && series.source) {
+                    series.data = series.source;
+                }
+                
+                // Convert single value to array if needed
+                if (series.data !== undefined && !Array.isArray(series.data)) {
+                    series.data = [series.data];
+                }
+                
+                // Initialize empty data array if none exists
+                if (!series.data) series.data = [];
+                
+                // Ensure type is set
+                if (!series.type) {
+                    series.type = 'bar'; // Default to bar chart
+                }
+                
+                return series;
+            });
+            
+            // Keep if any series has data or if using dataset
+            return config.series.some(series => 
+                (series.data && series.data.length > 0) || series.source
+            );
+        }
+        
+        // Allow other valid E-charts configurations
+        return true;
     });
 
     // Limit number of visualizations
@@ -455,14 +488,40 @@ function generateTreeChart(data, title) {
 
 // Function to generate categorical charts
 function generateCategoricalCharts(data) {
+    console.log('Generating categorical charts with data:', data);
     const configs = [];
     
-    if (!data.categorical) return configs;
+    if (!data.categorical) {
+        console.warn('No categorical data found');
+        return configs;
+    }
     
     // For each categorical column
-    Object.entries(data.categorical).forEach(([column, stats]) => {
+    Object.entries(data.categorical).forEach(([column, columnData]) => {
+        console.log(`Processing column ${column} with data:`, columnData);
+        
+        if (!columnData || !columnData.frequencies) {
+            console.warn(`Missing data or frequencies for column ${column}`);
+            return;
+        }
+
+        const frequencies = columnData.frequencies;
+        console.log(`Frequencies for ${column}:`, frequencies);
+        
+        const sortedData = Object.entries(frequencies)
+            .sort(([, a], [, b]) => b - a) // Sort by frequency descending
+            .map(([category, count], index) => ({
+                name: category,
+                value: count,
+                itemStyle: {
+                    color: THEME_COLORS[index % THEME_COLORS.length]
+                }
+            }));
+            
+        console.log(`Sorted data for ${column}:`, sortedData);
+
         // Bar Chart
-        configs.push({
+        const barConfig = {
             title: {
                 text: `Frequency of ${column}`,
                 textStyle: { color: '#fff' }
@@ -481,7 +540,7 @@ function generateCategoricalCharts(data) {
             },
             xAxis: {
                 type: 'category',
-                data: Object.keys(stats.frequencies),
+                data: sortedData.map(item => item.name),
                 axisLabel: {
                     color: '#fff',
                     rotate: 45,
@@ -495,6 +554,7 @@ function generateCategoricalCharts(data) {
             },
             yAxis: {
                 type: 'value',
+                name: 'Count',
                 axisLabel: { color: '#fff' },
                 axisLine: {
                     lineStyle: {
@@ -509,22 +569,20 @@ function generateCategoricalCharts(data) {
             },
             series: [{
                 type: 'bar',
-                data: Object.entries(stats.frequencies).map(([name, value], index) => ({
-                    value,
-                    itemStyle: {
-                        color: THEME_COLORS[index % THEME_COLORS.length]
-                    }
-                })),
+                data: sortedData,
                 label: {
                     show: true,
                     position: 'top',
                     color: '#fff'
                 }
             }]
-        });
+        };
+        
+        console.log(`Bar chart config for ${column}:`, barConfig);
+        configs.push(barConfig);
 
         // Pie Chart
-        configs.push({
+        const pieConfig = {
             title: {
                 text: `Distribution of ${column}`,
                 textStyle: { color: '#fff' }
@@ -554,17 +612,15 @@ function generateCategoricalCharts(data) {
                         fontWeight: 'bold'
                     }
                 },
-                data: Object.entries(stats.frequencies).map(([name, value], index) => ({
-                    name,
-                    value,
-                    itemStyle: {
-                        color: THEME_COLORS[index % THEME_COLORS.length]
-                    }
-                }))
+                data: sortedData
             }]
-        });
+        };
+        
+        console.log(`Pie chart config for ${column}:`, pieConfig);
+        configs.push(pieConfig);
     });
     
+    console.log('Generated chart configs:', configs);
     return configs;
 }
 
@@ -592,21 +648,345 @@ async function generateVisualizations(data) {
 
         const configs = [];
         
-        // Add categorical visualizations
-        if (data.processed_data.categorical) {
+        // Handle relationship analysis from AI assistant
+        if (data.analysis_request) {
+            const { variables, type, metrics } = data.analysis_request;
+            
+            // Get the actual data for the requested variables
+            const variableData = variables.map(v => ({
+                name: v,
+                values: data.processed_data.preview.map(row => row[v]),
+                type: data.processed_data.column_stats[v]?.type
+            }));
+
+            // Generate appropriate visualization based on variable types and analysis request
+            const analysisConfig = generateAnalysisVisualization(variableData, type, metrics);
+            if (analysisConfig) {
+                configs.push(analysisConfig);
+            }
+        }
+        
+        // Add categorical visualizations if no specific analysis is requested
+        if (!data.analysis_request && data.processed_data.categorical) {
             configs.push(...generateCategoricalCharts(data.processed_data));
         }
         
-        // Add existing numeric visualizations
-        // ... existing numeric visualization code ...
-        
         // Update visualizations with the generated configs
-        await updateVisualizations(configs);
+        if (configs.length > 0) {
+            await updateVisualizations(configs);
+        } else {
+            throw new Error('No visualization configurations could be generated');
+        }
         
     } catch (error) {
         logError('Error generating visualizations:', error);
         showError('Failed to generate visualizations: ' + error.message);
     }
+}
+
+// Update generateAnalysisVisualization function
+function generateAnalysisVisualization(variables, type, metrics = []) {
+    try {
+        // Enhanced data validation and cleaning
+        const cleanVariables = variables.map(v => {
+            // Get the raw data and stats for this variable
+            const rawData = v.values;
+            const stats = window.appState.currentData.column_stats[v.name];
+            
+            // Clean and validate the data
+            const cleanValues = v.type === 'numeric' 
+                ? rawData.map(val => Number(val)).filter(val => !isNaN(val))
+                : rawData.filter(val => val != null && val !== '');
+            
+            return {
+                name: v.name,
+                type: v.type,
+                values: cleanValues,
+                stats: stats || {},
+                raw_values: rawData
+            };
+        });
+
+        // Log the cleaned data for debugging
+        console.log('Clean variables for visualization:', cleanVariables);
+
+        // Get variable types
+        const types = cleanVariables.map(v => v.type);
+
+        // Generate appropriate chart configuration based on variable types
+        if (types.includes('categorical') && types.includes('numeric')) {
+            return generateCategoricalNumericChart(cleanVariables, metrics);
+        } else if (types.every(t => t === 'numeric')) {
+            return generateNumericChart(cleanVariables, metrics);
+        } else if (types.every(t => t === 'categorical')) {
+            return generateCategoricalChart(cleanVariables, metrics);
+        }
+
+        return null;
+    } catch (error) {
+        logError('Error generating analysis visualization:', error);
+        return null;
+    }
+}
+
+function generateCategoricalNumericChart(variables, metrics = []) {
+    // Find categorical and numeric variables
+    const categoricalVar = variables.find(v => v.type === 'categorical');
+    const numericVar = variables.find(v => v.type === 'numeric');
+    
+    if (!categoricalVar || !numericVar) {
+        throw new Error('Required variables not found');
+    }
+    
+    // Group numeric values by categories
+    const groupedData = {};
+    for (let i = 0; i < categoricalVar.values.length; i++) {
+        const category = categoricalVar.values[i];
+        const value = numericVar.values[i];
+        
+        if (category != null && !isNaN(value)) {
+            if (!groupedData[category]) {
+                groupedData[category] = [];
+            }
+            groupedData[category].push(value);
+        }
+    }
+    
+    // Calculate statistics for each group
+    const stats = Object.entries(groupedData).map(([category, values]) => {
+        const sorted = [...values].sort((a, b) => a - b);
+        return {
+            category,
+            count: values.length,
+            mean: values.reduce((a, b) => a + b, 0) / values.length,
+            median: sorted[Math.floor(sorted.length / 2)],
+            min: Math.min(...values),
+            max: Math.max(...values),
+            q1: sorted[Math.floor(sorted.length * 0.25)],
+            q3: sorted[Math.floor(sorted.length * 0.75)],
+            values
+        };
+    });
+    
+    // Create chart configuration
+    return {
+        title: {
+            text: `${numericVar.name} by ${categoricalVar.name}`,
+            left: 'center'
+        },
+        tooltip: {
+            trigger: 'axis',
+            axisPointer: {
+                type: 'shadow'
+            },
+            formatter: function(params) {
+                const stat = stats.find(s => s.category === params[0].name);
+                if (!stat) return '';
+                
+                return `
+                    <strong>${params[0].name}</strong><br/>
+                    Count: ${stat.count}<br/>
+                    Mean: ${stat.mean.toFixed(2)}<br/>
+                    Median: ${stat.median.toFixed(2)}<br/>
+                    Min: ${stat.min.toFixed(2)}<br/>
+                    Max: ${stat.max.toFixed(2)}<br/>
+                    Q1: ${stat.q1.toFixed(2)}<br/>
+                    Q3: ${stat.q3.toFixed(2)}
+                `;
+            }
+        },
+        legend: {
+            data: ['Mean', 'Box Plot'],
+            top: 30
+        },
+        grid: {
+            top: 80,
+            containLabel: true
+        },
+        xAxis: {
+            type: 'category',
+            data: stats.map(s => s.category),
+            name: categoricalVar.name,
+            axisLabel: {
+                rotate: 45
+            }
+        },
+        yAxis: {
+            type: 'value',
+            name: numericVar.name
+        },
+        series: [
+            {
+                name: 'Mean',
+                type: 'bar',
+                data: stats.map(s => s.mean),
+                itemStyle: {
+                    color: '#91cc75'
+                }
+            },
+            {
+                name: 'Box Plot',
+                type: 'boxplot',
+                data: stats.map(s => [s.min, s.q1, s.median, s.q3, s.max]),
+                itemStyle: {
+                    color: '#5470c6'
+                }
+            }
+        ]
+    };
+}
+
+function generateNumericChart(variables, metrics = []) {
+    if (variables.length === 1) {
+        // Single numeric variable - create histogram
+        const variable = variables[0];
+        const values = variable.values;
+        
+        // Calculate histogram bins
+        const binCount = Math.min(20, Math.ceil(Math.sqrt(values.length)));
+        const min = Math.min(...values);
+        const max = Math.max(...values);
+        const binWidth = (max - min) / binCount;
+        
+        const bins = Array(binCount).fill(0);
+        values.forEach(value => {
+            const binIndex = Math.min(
+                Math.floor((value - min) / binWidth),
+                binCount - 1
+            );
+            bins[binIndex]++;
+        });
+        
+        const binLabels = Array(binCount).fill(0).map((_, i) => {
+            const start = min + (i * binWidth);
+            const end = start + binWidth;
+            return `${start.toFixed(2)} - ${end.toFixed(2)}`;
+        });
+        
+        return {
+            title: {
+                text: `Distribution of ${variable.name}`,
+                left: 'center'
+            },
+            tooltip: {
+                trigger: 'axis',
+                formatter: function(params) {
+                    return `
+                        <strong>${params[0].name}</strong><br/>
+                        Count: ${params[0].value}
+                    `;
+                }
+            },
+            xAxis: {
+                type: 'category',
+                data: binLabels,
+                name: variable.name,
+                axisLabel: {
+                    rotate: 45
+                }
+            },
+            yAxis: {
+                type: 'value',
+                name: 'Count'
+            },
+            series: [{
+                type: 'bar',
+                data: bins,
+                itemStyle: {
+                    color: '#5470c6'
+                }
+            }]
+        };
+    } else {
+        // Multiple numeric variables - create scatter plot
+        const xVar = variables[0];
+        const yVar = variables[1];
+        
+        // Pair the values
+        const data = xVar.values.map((x, i) => [x, yVar.values[i]])
+            .filter(([x, y]) => !isNaN(x) && !isNaN(y));
+        
+        return {
+            title: {
+                text: `${xVar.name} vs ${yVar.name}`,
+                left: 'center'
+            },
+            tooltip: {
+                trigger: 'item',
+                formatter: function(params) {
+                    return `
+                        <strong>Point</strong><br/>
+                        ${xVar.name}: ${params.value[0].toFixed(2)}<br/>
+                        ${yVar.name}: ${params.value[1].toFixed(2)}
+                    `;
+                }
+            },
+            xAxis: {
+                type: 'value',
+                name: xVar.name
+            },
+            yAxis: {
+                type: 'value',
+                name: yVar.name
+            },
+            series: [{
+                type: 'scatter',
+                data: data,
+                itemStyle: {
+                    color: '#5470c6'
+                }
+            }]
+        };
+    }
+}
+
+function generateCategoricalChart(variables, metrics = []) {
+    const variable = variables[0];
+    const frequencies = {};
+    
+    // Calculate frequencies
+    variable.values.forEach(value => {
+        if (value != null) {
+            frequencies[value] = (frequencies[value] || 0) + 1;
+        }
+    });
+    
+    // Convert to array of objects
+    const data = Object.entries(frequencies)
+        .map(([name, value]) => ({ name, value }))
+        .sort((a, b) => b.value - a.value);
+    
+    return {
+        title: {
+            text: `Distribution of ${variable.name}`,
+            left: 'center'
+        },
+        tooltip: {
+            trigger: 'item',
+            formatter: function(params) {
+                const percentage = ((params.value / variable.values.length) * 100).toFixed(1);
+                return `
+                    <strong>${params.name}</strong><br/>
+                    Count: ${params.value}<br/>
+                    Percentage: ${percentage}%
+                `;
+            }
+        },
+        series: [
+            {
+                type: 'pie',
+                radius: '50%',
+                data: data,
+                emphasis: {
+                    itemStyle: {
+                        shadowBlur: 10,
+                        shadowOffsetX: 0,
+                        shadowColor: 'rgba(0, 0, 0, 0.5)'
+                    }
+                }
+            }
+        ]
+    };
 }
 
 // Create a new chart container with actions

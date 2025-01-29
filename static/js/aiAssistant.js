@@ -153,6 +153,74 @@ async function handleAIQuestion() {
         }
 
         console.log('Sending request to server');
+        const context = {
+            question,
+            data: window.appState.currentData,
+            column_stats: window.appState.currentData.column_stats || {},
+            processed_data: {
+                preview: window.appState.currentData.preview || [],
+                column_stats: window.appState.currentData.column_stats || {},
+                categorical: {},
+                numeric: {},
+                raw_data: window.appState.currentData.preview || []
+            }
+        };
+
+        // Process column statistics
+        Object.entries(context.column_stats).forEach(([column, stats]) => {
+            if (!stats) return;
+            
+            // Store the raw column data for easy access
+            const columnData = context.processed_data.preview.map(row => row[column]);
+            
+            if (stats.type === 'categorical') {
+                // Enhanced categorical data processing
+                const frequencies = {};
+                const validValues = columnData.filter(val => val != null && val !== '');
+                validValues.forEach(val => {
+                    frequencies[val] = (frequencies[val] || 0) + 1;
+                });
+                
+                context.processed_data.categorical[column] = {
+                    frequencies,
+                    total: validValues.length,
+                    unique_values: [...new Set(validValues)],
+                    data: Object.entries(frequencies).map(([key, value]) => ({
+                        name: String(key),
+                        value: Number(value)
+                    }))
+                };
+            } else if (stats.type === 'numeric') {
+                // Enhanced numeric data processing
+                const validNumbers = columnData
+                    .map(val => Number(val))
+                    .filter(val => !isNaN(val));
+                
+                const sorted = [...validNumbers].sort((a, b) => a - b);
+                const q1Idx = Math.floor(sorted.length * 0.25);
+                const q3Idx = Math.floor(sorted.length * 0.75);
+                
+                context.processed_data.numeric[column] = {
+                    min: Math.min(...validNumbers),
+                    max: Math.max(...validNumbers),
+                    mean: validNumbers.reduce((a, b) => a + b, 0) / validNumbers.length,
+                    median: sorted[Math.floor(sorted.length / 2)] || 0,
+                    q1: sorted[q1Idx] || 0,
+                    q3: sorted[q3Idx] || 0,
+                    raw_values: validNumbers,
+                    data: stats.frequencies ? 
+                        Object.entries(stats.frequencies)
+                            .filter(([key]) => !isNaN(key))
+                            .map(([key, value]) => ({
+                                name: Number(key),
+                                value: Number(value)
+                            }))
+                        : []
+                };
+            }
+        });
+
+        // Send enhanced context to server
         const response = await fetch('/ai/analyze', {
             method: 'POST',
             headers: {
@@ -160,9 +228,7 @@ async function handleAIQuestion() {
             },
             body: JSON.stringify({
                 question: question,
-                context: {
-                    data: window.appState.currentData
-                }
+                context: context
             })
         });
 
@@ -173,7 +239,7 @@ async function handleAIQuestion() {
         const result = await response.json();
         console.log('Raw AI Response:', result);
 
-        // Extract answer and visualizations, with detailed logging
+        // Extract answer and visualizations
         const answer = result?.response?.response?.answer || result?.response?.answer;
         const visualizations = result?.response?.response?.visualizations || result?.response?.visualizations;
         
@@ -181,102 +247,69 @@ async function handleAIQuestion() {
         console.log('Extracted Visualizations:', visualizations);
 
         if (answer) {
+            // First add the analysis text
             addMessage('assistant', answer);
             
-            // Handle visualizations with explicit type checking
+            // Then handle visualizations
             if (visualizations) {
-                console.log('Visualization Type:', typeof visualizations);
-                console.log('Visualization Structure:', JSON.stringify(visualizations, null, 2));
+                console.log('Processing visualizations:', visualizations);
                 
                 try {
-                    // Prepare data for visualization generation
-                    const processedData = {
-                        processed_data: {
-                            preview: window.appState.currentData.preview || [],
-                            categorical: {},
-                            numeric: {}
-                        },
-                        column_stats: window.appState.currentData.column_stats || {}
-                    };
-
-                    // Process column statistics to categorize data
-                    Object.entries(window.appState.currentData.column_stats || {}).forEach(([column, stats]) => {
-                        if (stats.type === 'categorical') {
-                            // Ensure frequencies exist and are in correct format
-                            const frequencies = stats.frequencies || {};
-                            processedData.processed_data.categorical[column] = {
-                                frequencies,
-                                total: Object.values(frequencies).reduce((a, b) => a + b, 0),
-                                data: Object.entries(frequencies).map(([key, value]) => ({
-                                    name: key,
-                                    value: value
-                                }))
-                            };
-                        } else if (stats.type === 'numeric') {
-                            // Ensure numeric data has required properties
-                            processedData.processed_data.numeric[column] = {
-                                min: stats.min || 0,
-                                max: stats.max || 0,
-                                mean: stats.mean || 0,
-                                median: stats.median || 0,
-                                data: stats.frequencies ? Object.entries(stats.frequencies).map(([key, value]) => ({
-                                    name: parseFloat(key),
-                                    value: value
-                                })) : []
-                            };
-                        }
-                    });
-
-                    // Generate charts using the categorical data
-                    const configs = [];
-                    
-                    // Add categorical charts if we have categorical data
-                    if (Object.keys(processedData.processed_data.categorical).length > 0) {
-                        const categoricalCharts = generateCategoricalCharts(processedData.processed_data);
-                        if (categoricalCharts.length > 0) {
-                            // Validate each chart config before adding
-                            categoricalCharts.forEach(config => {
-                                if (config.series && Array.isArray(config.series)) {
-                                    // Ensure each series has required properties
-                                    config.series.forEach(series => {
-                                        if (!series.data) {
-                                            series.data = [];
-                                        }
-                                        if (!series.type) {
-                                            series.type = 'bar';  // Default to bar chart
-                                        }
-                                    });
-                                    configs.push(config);
-                                }
-                            });
-                        }
-                    }
-                    
-                    // If AI provided specific visualizations, validate and merge them
-                    if (Array.isArray(visualizations)) {
-                        visualizations.forEach(vizConfig => {
-                            if (vizConfig && typeof vizConfig === 'object' && vizConfig.series) {
-                                // Deep clone to avoid modifying original
-                                const validatedConfig = JSON.parse(JSON.stringify(vizConfig));
-                                
-                                // Ensure each series has required properties
-                                validatedConfig.series = validatedConfig.series.map(series => ({
-                                    type: series.type || 'bar',
-                                    data: Array.isArray(series.data) ? series.data : [],
-                                    ...series
+                    // If the visualization is an analysis request, process it directly
+                    if (visualizations.analysis_request) {
+                        const data = {
+                            processed_data: context.processed_data,
+                            analysis_request: visualizations.analysis_request
+                        };
+                        await generateVisualizations(data);
+                    } else {
+                        // Convert visualization configs to proper format and inject data
+                        const configs = Array.isArray(visualizations) ? visualizations : [visualizations];
+                        
+                        // Map the configs to include actual data from context
+                        const dataPopulatedConfigs = configs.map(config => {
+                            // If config specifies variables, use them to populate data
+                            if (config.variables) {
+                                const variableData = config.variables.map(v => ({
+                                    name: v,
+                                    values: context.processed_data.preview.map(row => row[v]),
+                                    type: context.processed_data.column_stats[v]?.type
                                 }));
                                 
-                                configs.push(validatedConfig);
+                                // Generate visualization based on variable types
+                                return generateAnalysisVisualization(variableData, config.type || 'auto', config.metrics);
                             }
-                        });
-                    }
-                    
-                    if (configs.length > 0) {
-                        console.log('Generated visualization configs:', configs);
-                        await updateVisualizations(configs);
-                    } else {
-                        console.error('No valid visualization configs generated');
-                        addMessage('error', 'Could not generate visualizations from the current data. Please try a different visualization request.');
+                            
+                            // If config has series but no data, try to populate from context
+                            if (config.series) {
+                                config.series = config.series.map(series => {
+                                    if (series.variable) {
+                                        const values = context.processed_data.preview.map(row => row[series.variable]);
+                                        return {
+                                            ...series,
+                                            data: values.filter(v => v != null)
+                                        };
+                                    }
+                                    return series;
+                                });
+                            }
+                            
+                            return config;
+                        }).filter(Boolean); // Remove any null configs
+                        
+                        if (dataPopulatedConfigs.length > 0) {
+                            console.log('Rendering data-populated configs:', dataPopulatedConfigs);
+                            await updateVisualizations(dataPopulatedConfigs);
+                        } else {
+                            console.warn('No valid visualization configs found');
+                            // Generate basic charts as fallback
+                            if (Object.keys(context.processed_data.categorical).length > 0) {
+                                const categoricalCharts = generateCategoricalCharts(context.processed_data);
+                                if (categoricalCharts.length > 0) {
+                                    await updateVisualizations(categoricalCharts);
+                                }
+                            }
+                        }
                     }
                 } catch (vizError) {
                     console.error('Visualization generation error:', vizError);
@@ -414,32 +447,140 @@ async function handleVisualizationResponse(response) {
     try {
         let configs = [];
         
-        // Handle both direct visualization configs and markdown-embedded configs
+        // Handle both direct visualization configs and analysis requests
         if (Array.isArray(response)) {
             configs = response;
+        } else if (typeof response === 'object' && response.analysis_request) {
+            // Format the analysis request from AI
+            const data = {
+                processed_data: window.appState.currentData,
+                analysis_request: {
+                    variables: response.analysis_request.variables,
+                    type: response.analysis_request.type,
+                    metrics: response.analysis_request.metrics || []
+                }
+            };
+            
+            // Generate visualizations with the analysis request
+            await generateVisualizations(data);
+            return true;
         } else if (typeof response === 'string' && (response.includes('```echarts') || response.includes('```json'))) {
             configs = extractVisualizationConfig(response);
         }
         
-        // Validate and clean up configs
-        configs = configs.filter(config => {
+        if (!configs || configs.length === 0) {
+            console.warn('No valid visualization configs found in response');
+            return false;
+        }
+
+        // Enhanced data population and validation
+        const context = window.appState.currentData;
+        const dataPopulatedConfigs = configs.map(config => {
             try {
-                return isValidVisualizationConfig(config);
-            } catch (e) {
-                console.error('Invalid visualization config:', e);
-                return false;
+                // Deep clone to avoid modifying original
+                config = JSON.parse(JSON.stringify(config));
+                
+                // Handle dataset source population
+                if (config.dataset && config.dataset.variable) {
+                    const values = context.processed_data.preview.map(row => row[config.dataset.variable]);
+                    config.dataset.source = values.filter(v => v != null);
+                }
+                
+                // Handle series data population
+                if (config.series) {
+                    config.series = config.series.map(series => {
+                        // Handle direct variable reference
+                        if (series.variable) {
+                            const values = context.processed_data.preview.map(row => row[series.variable]);
+                            series.data = values.filter(v => v != null);
+                        }
+                        
+                        // Handle mapping data from variables
+                        if (series.mapping) {
+                            const { x, y, category } = series.mapping;
+                            const mappedData = context.processed_data.preview.map(row => {
+                                const point = {};
+                                if (x) point.value = [row[x], row[y]];
+                                if (category) point.category = row[category];
+                                return point;
+                            }).filter(point => {
+                                return point.value ? !point.value.some(v => v == null) : true;
+                            });
+                            series.data = mappedData;
+                        }
+                        
+                        return series;
+                    });
+                }
+                
+                return config;
+            } catch (error) {
+                console.error('Error populating data for config:', error);
+                return null;
             }
-        });
+        }).filter(Boolean);
         
-        if (configs.length > 0) {
-            console.log('Rendering visualizations:', configs);
-            await updateVisualizations(configs);
+        if (dataPopulatedConfigs.length > 0) {
+            console.log('Rendering data-populated configs:', dataPopulatedConfigs);
+            await updateVisualizations(dataPopulatedConfigs);
             return true;
+        }
+        
+        // Fallback to basic charts if no valid configs
+        if (context.processed_data.categorical && Object.keys(context.processed_data.categorical).length > 0) {
+            const categoricalCharts = generateCategoricalCharts(context.processed_data);
+            if (categoricalCharts.length > 0) {
+                await updateVisualizations(categoricalCharts);
+                return true;
+            }
         }
         
         return false;
     } catch (error) {
-        console.error('Error processing visualization response:', error);
+        console.error('Error handling visualization response:', error);
         return false;
     }
+}
+
+// Add function to extract visualization config from markdown
+function extractVisualizationConfig(markdown) {
+    try {
+        const configs = [];
+        const configBlocks = markdown.match(/```(?:echarts|json)\n([\s\S]*?)```/g) || [];
+        
+        for (const block of configBlocks) {
+            const content = block.replace(/```(?:echarts|json)\n([\s\S]*?)```/, '$1');
+            try {
+                const config = JSON.parse(content);
+                configs.push(config);
+            } catch (e) {
+                console.error('Error parsing config block:', e);
+            }
+        }
+        
+        return configs;
+    } catch (error) {
+        console.error('Error extracting visualization config:', error);
+        return [];
+    }
+}
+
+// Add function to validate visualization config
+function isValidVisualizationConfig(config) {
+    if (!config || typeof config !== 'object') return false;
+    
+    // Must have either series or dataset
+    if (!config.series && !config.dataset) return false;
+    
+    // If has series, must be array
+    if (config.series && !Array.isArray(config.series)) return false;
+    
+    // Each series must have type and data/source
+    if (config.series) {
+        return config.series.every(series => 
+            series.type && (series.data || series.source)
+        );
+    }
+    
+    return true;
 }
