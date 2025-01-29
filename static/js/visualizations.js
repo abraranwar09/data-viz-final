@@ -891,6 +891,8 @@ function generateNumericChart(variables, metrics = []) {
     }
 }
 
+//comment for commit
+
 function generateCategoricalChart(variables, metrics = []) {
     const variable = variables[0];
     const frequencies = {};
